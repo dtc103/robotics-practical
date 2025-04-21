@@ -12,6 +12,7 @@ find_package(ament_cmake REQUIRED)
 # find_package(<dependency> REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 
 add_executable(simple_time src/simple_time.cpp)
 add_executable(simple_odometry src/simple_odometry.cpp)
@@ -20,8 +21,8 @@ target_include_directories(simple_time PUBLIC
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
 target_compile_features(simple_time PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 target_compile_features(simple_odometry PUBLIC c_std_99 cxx_std_17)
-ament_target_dependencies(simple_time rclcpp geometry_msgs)
-ament_target_dependencies(simple_odometry rclcpp geometry_msgs)
+ament_target_dependencies(simple_time rclcpp geometry_msgs nav_msgs)
+ament_target_dependencies(simple_odometry rclcpp geometry_msgs nav_msgs)
 
 install(TARGETS simple_time simple_odometry
   DESTINATION lib/${PROJECT_NAME})

@@ -1,8 +1,10 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <geometry_msgs/msg/pose.hpp>
+#include <nav_msgs/msg/odometry.hpp>
 #include <mutex>
 #include <array>
+#include <functional>
 
 class SimpleOdoNode: public rclcpp::Node{
     public:    
@@ -10,31 +12,34 @@ class SimpleOdoNode: public rclcpp::Node{
         ~SimpleOdoNode();
     
         void thread_callback();
-        void pose_callback(geometry_msgs::msg::Pose);
+        void pose_callback(nav_msgs::msg::Odometry::UniquePtr);
+
+    private:
         double distance_to_start(std::array<double, 3>);
     
     private:
-        enum class State {FORWARD, BACKWARD, FW_STOP, BW_STOP};
+        enum class State {FORWARD, BACKWARD};
 
         //robot stuff
         State robot_state;
         std::array<double, 3> position; 
         std::mutex arr_mutex;
 
-        double robot_speed = 0.5;
+        double robot_speed = 1.0;
         double goal_distance = 2;
 
         // ros2 stuff
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher;
-        rclcpp::Subscription<geometry_msgs::msg::Pose>::SharedPtr subscriber;
+        rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subscriber;
         std::atomic<bool> stop_event;
     };
     
 SimpleOdoNode::SimpleOdoNode(): rclcpp::Node("simple_time_publisher"), stop_event(false){
-    publisher = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
-    subscriber = this->create_subscription<geometry_msgs::msg::Pose>("/odom", 10, std::bind(&SimpleOdoNode::pose_callback, this));
-    robot_state = State::BW_STOP;
+    publisher = this->create_publisher<geometry_msgs::msg::Twist>("/robot_0/cmd_vel", 10);
+    subscriber = this->create_subscription<nav_msgs::msg::Odometry>("/robot_0/odom", 10, std::bind(&SimpleOdoNode::pose_callback, this, std::placeholders::_1));
+    robot_state = State::FORWARD;
     std::thread t(std::bind(&SimpleOdoNode::thread_callback, this));
+    t.detach();
 }
 
 SimpleOdoNode::~SimpleOdoNode(){
@@ -43,51 +48,40 @@ SimpleOdoNode::~SimpleOdoNode(){
 
 void SimpleOdoNode::thread_callback(){
     while(rclcpp::ok() && !stop_event){
-        geometry_msgs::msg::Twist msg = geometry_msgs::msg::Twist();
+		geometry_msgs::msg::Twist msg = geometry_msgs::msg::Twist();
 
-        if (this->robot_state == State::FORWARD){
-            this->robot_state = State::FW_STOP;
-            msg.linear.x = 0.0;
-            this->publisher->publish(msg);
+		auto start_pos = this->position;
+		
+		while(distance_to_start(start_pos) <= this->goal_distance && !stop_event){
+			if (robot_state == State::FORWARD){
+				msg.linear.x = this->robot_speed;
+			}
+			if (robot_state == State::BACKWARD) {
+				msg.linear.x = -this->robot_speed;
+			}
+			this->publisher->publish(msg);
+		}
 
-            rclcpp::Rate rate(1); //sleep for 1 sec (remember: input is Hz, not sec)
-            rate.sleep();
-            continue;
-        }
+		if(this->robot_state == State::BACKWARD) {
+			this->robot_state = State::FORWARD;
+		}
+		else {
+			this->robot_state = State::BACKWARD;
+		}
 
-        if (this->robot_state == State::BACKWARD){
-            this->robot_state = State::BW_STOP;
-            msg.linear.x = 0.0;
-            this->publisher->publish(msg);
+		msg.linear.x = 0.0;
+		this->publisher->publish(msg);
 
-            rclcpp::Rate rate(1);
-            rate.sleep();
-            continue;
-        }
+		rclcpp::Rate rate(1);
+		rate.sleep();
+	}
 
-        if(this->robot_state == State::BW_STOP) {
-            this->robot_state = State::FORWARD;
-        }
-        if(this->robot_state == State::FW_STOP) {
-            this->robot_state = State::BACKWARD;
-        }
+	geometry_msgs::msg::Twist stop_msg = geometry_msgs::msg::Twist();
+	stop_msg.linear.x = 0.0;
+	stop_msg.linear.y = 0.0;
+	stop_msg.linear.z = 0.0;
 
-        std::array<double, 3> start_position;
-        {
-            std::lock_guard<std::mutex> lock(this->arr_mutex);
-            start_position = this->position;
-        }
-        
-        while(distance_to_start(start_position) < this->goal_distance){
-            if (robot_state == State::FORWARD){
-                msg.linear.x = this->robot_speed;
-            }
-            if (robot_state == State::BACKWARD) {
-                msg.linear.x = -this->robot_speed;
-            }
-            this->publisher->publish(msg);
-        }
-    }
+	this->publisher->publish(stop_msg);
 }
 
 double SimpleOdoNode::distance_to_start(std::array<double, 3> start_position){
@@ -96,14 +90,17 @@ double SimpleOdoNode::distance_to_start(std::array<double, 3> start_position){
         std::lock_guard<std::mutex> lock(this->arr_mutex);
         curr_pos = this->position;
     }
-
-    return std::sqrt(std::pow(curr_pos[0] - start_position[0], 2) + std::pow(curr_pos[1] - start_position[1], 2) + std::pow(curr_pos[2] - start_position[2], 2));
+    double distance = std::sqrt(std::pow(curr_pos[0] - start_position[0], 2) + std::pow(curr_pos[1] - start_position[1], 2) + std::pow(curr_pos[2] - start_position[2], 2));
+    std::cout << curr_pos[0] << " " << curr_pos[1] << " " << curr_pos[2] << std::endl;
+    std::cout << start_position[0] << " " << start_position[1] << " " << start_position[2] << std::endl;
+    std::cout << distance << std::endl << std::endl;
+    return distance;
 }
 
-void SimpleOdoNode::pose_callback(geometry_msgs::msg::Pose msg){
-    double x = msg.position.x;
-    double y = msg.position.y;
-    double z = msg.position.z;
+void SimpleOdoNode::pose_callback(nav_msgs::msg::Odometry::UniquePtr msg){
+    double x = msg->pose.pose.position.x;
+    double y = msg->pose.pose.position.y;
+    double z = msg->pose.pose.position.z;
     {
         std::lock_guard<std::mutex> lock(this->arr_mutex);
         this->position = {x, y, z};
