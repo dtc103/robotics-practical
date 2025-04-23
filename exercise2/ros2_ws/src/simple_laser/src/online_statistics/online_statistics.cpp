@@ -1,4 +1,4 @@
-#include "onlinestatistics.h"
+#include "online_statistics/online_statistics.hpp"
 #include <cmath>
 
 // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
@@ -25,9 +25,9 @@ double OnlineStatistics::getMean() {
 
 double OnlineStatistics::getStandardDeviation() {
     // unbiased std
-    // return std::sqrt(this->M2 / (n-1))
+    return std::sqrt(this->M2 / (n-1))
 
     // biased std
-    return std::sqrt(this->M2 / n)
+    //return std::sqrt(this->M2 / n)
 }
 

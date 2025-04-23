@@ -45,7 +45,7 @@ void SimpleTimeNode::thread_callback(){
 
 		auto start_time = this->now();
 		
-		while(this->now() - start_time < rclcpp::Duration::from_seconds(2.0) && !stop_event){
+		while(this->now() - start_time < rclcpp::Duration::from_seconds(this->driving_time) && !stop_event){
 			if (robot_state == State::FORWARD){
 				msg.linear.x = this->robot_speed;
 			}
