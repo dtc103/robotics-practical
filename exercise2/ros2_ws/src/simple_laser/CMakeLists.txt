@@ -12,21 +12,28 @@ find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
-add_executable(simple_scan src/simple_scan.cpp src/online_statistics.cpp)
+add_library(online_statistics src/online_statistics.cpp)
+target_include_directories(online_statistics PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+)
+target_compile_features(online_statistics PUBLIC cxx_std_17)
+
+add_executable(simple_scan src/simple_scan.cpp)
 target_include_directories(simple_scan PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
 target_compile_features(simple_scan PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 ament_target_dependencies(
   simple_scan
-  "rclcpp"
-  "sensor_msgs"
-  "std_msgs"
-  "geometry_msgs"
+  rclcpp
+  sensor_msgs
 )
+target_link_libraries(simple_scan online_statistics)
 
 install(TARGETS simple_scan
   DESTINATION lib/${PROJECT_NAME})
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

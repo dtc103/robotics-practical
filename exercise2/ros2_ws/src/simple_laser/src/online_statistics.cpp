@@ -1,4 +1,4 @@
-#include "../include/simple_laser/online_statistics.h"
+#include "online_statistics/online_statistics.h"
 #include <cmath>
 
 // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
@@ -10,9 +10,9 @@ OnlineStatistics::OnlineStatistics()
 void OnlineStatistics::update(double value) {
     measurements = measurements + 1;
     double delta = value - mean;
-    mean = mean+ delta / measurements;
+    mean = mean + delta / measurements;
     double delta2 = value - mean;
-    std = std+  delta * delta2;
+    std = std + delta * delta2;
 }
 
 double OnlineStatistics::getMean() {
