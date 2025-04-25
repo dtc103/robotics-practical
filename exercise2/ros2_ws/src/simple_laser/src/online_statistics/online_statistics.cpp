@@ -7,27 +7,26 @@ OnlineStatistics::OnlineStatistics()
 {
     this->mean = 0.0;
     this->std = 0.0;
-    this-> M2 = 0;
-    this->measurmentes = 0;
+    this->M2 = 0.0;
+    this->measurements = 0;
 }
 
 void OnlineStatistics::update(double value) {
     this->measurements += 1;
-    double delta_1 = value - this->mean;
-    this->mean += delta_1 / this->measurements;
-    double delta_2 = value - this->mean;
-    this->M2 += delta_1 * delta_2;
+    double delta_old = value - this->mean;
+    this->mean += delta_old / this->measurements;
+
+    double delta_new = value - this->mean;
+    this->M2 += delta_old * delta_new;
+
+    this->std = std::sqrt(this->M2 / (this->measurements - 1));
 }
 
 double OnlineStatistics::getMean() {
-    return this->mean
+    return this->mean;
 }
 
 double OnlineStatistics::getStandardDeviation() {
-    // unbiased std
-    return std::sqrt(this->M2 / (n-1))
-
-    // biased std
-    //return std::sqrt(this->M2 / n)
+    return this->std;
 }
 

@@ -1,5 +1,3 @@
-#pragma once
-
 class OnlineStatistics {
     public:
         OnlineStatistics();
@@ -15,4 +13,3 @@ class OnlineStatistics {
         double M2;
         int measurements;
 };
-

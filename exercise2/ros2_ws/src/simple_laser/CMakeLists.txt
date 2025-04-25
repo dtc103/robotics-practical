@@ -13,6 +13,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 add_library(online_statistics src/online_statistics/online_statistics.cpp)
 target_include_directories(online_statistics PUBLIC
@@ -22,6 +23,13 @@ target_include_directories(online_statistics PUBLIC
 target_compile_features(online_statistics PUBLIC cxx_std_17)
 
 add_executable(simple_scan src/simple_scan.cpp)
+ament_target_dependencies(simple_scan
+  rclcpp
+  geometry_msgs
+  nav_msgs
+  sensor_msgs
+)
+
 target_include_directories(simple_scan PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
