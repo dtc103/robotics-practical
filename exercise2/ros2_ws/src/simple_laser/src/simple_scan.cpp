@@ -60,15 +60,15 @@ private:
 
         forward_ray_index_ = msg.ranges.size() / 2;
 
-        double forward_ray_distance = msg.ranges[forward_ray_index_];
+        double forward_ray_distance = msg.ranges[388];
 
         if (std::isnan(forward_ray_distance) || std::isinf(forward_ray_distance) || forward_ray_distance < range_min || forward_ray_distance > range_max) {
             //RCLCPP_WARN(this->get_logger(), "Invalid distance measurement: %.4f", forward_ray_distance);
+            std::cout << "nan" << std::endl;
             return;
         }
         statistics_.update(forward_ray_distance);
 
-        std::cout << msg.ranges.size() << std::endl;
         RCLCPP_INFO(this->get_logger(), "forward Ray Distance: %.5f m", forward_ray_distance);
         RCLCPP_INFO(this->get_logger(), "mean Distance: %.5f m", statistics_.getMean());
         RCLCPP_INFO(this->get_logger(), "standard Deviation: %.5f m", statistics_.getStandardDeviation());
