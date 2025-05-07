@@ -35,6 +35,8 @@ class ObstacleAvoidance: public rclcpp::Node {
         void check_save_zone();
         void process();
         void visualizeMarkers();
+        void publish_marker(Vec2f f_att, double r, double g, double b, std::string ns);
+        void publish_markers();
 
         std::mutex mutex;
         bool odomInit;
@@ -59,6 +61,9 @@ class ObstacleAvoidance: public rclcpp::Node {
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pubCmdVel;
 
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subOdom;
+
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr f_att_publisher;
+        rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr f_rep_publisher;
 
         std::shared_ptr<tf2_ros::Buffer> tf2Buffer;
         std::shared_ptr<tf2_ros::TransformListener> tf2Listener;

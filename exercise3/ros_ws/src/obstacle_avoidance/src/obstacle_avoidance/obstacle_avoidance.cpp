@@ -124,15 +124,18 @@ void ObstacleAvoidance::process()
 
     check_save_zone();
 
+    Vec2f f_att = this->pf->get_f_att(this->robotPos);
+    RCLCPP_INFO(this->get_logger(), "(%.2f, %.2f)" ,f_att.x, f_att.y);
 
+    this->publish_marker(f_att, 0.0, 1.0, 0.0, "potential");
 
 
     double distanceToGoal = (goalPos - robotPos).norm();
     if (distanceToGoal > 0.2 && !this->obstacle_detected)
     {
         double deltaYaw = (goalPos - robotPos).angle() - robotYaw;
-        RCLCPP_INFO(this->get_logger(), "Goal Pos: (%.2f, %.2f); Robot Pos: (%.2f, %.2f); Delta Yaw: %.2f; Robot Yaw: %.2f"
-            , goalPos.x, goalPos.y, robotPos.x, robotPos.y, deltaYaw, robotYaw);
+        //RCLCPP_INFO(this->get_logger(), "Goal Pos: (%.2f, %.2f); Robot Pos: (%.2f, %.2f); Delta Yaw: %.2f; Robot Yaw: %.2f"
+        //    , goalPos.x, goalPos.y, robotPos.x, robotPos.y, deltaYaw, robotYaw);
         
         if (deltaYaw > std::numbers::pi)
         {
@@ -143,7 +146,7 @@ void ObstacleAvoidance::process()
             deltaYaw += 2 * std::numbers::pi;
         }
 
-        RCLCPP_INFO(this->get_logger(), "%.2f", deltaYaw);
+        //RCLCPP_INFO(this->get_logger(), "%.2f", deltaYaw);
         double k = 0.5;
         twistMsg.linear.x = 0.3;
         twistMsg.angular.z = k * deltaYaw;
@@ -154,3 +157,36 @@ void ObstacleAvoidance::process()
 
     pubCmdVel->publish(twistMsg);
 }
+
+void ObstacleAvoidance::publish_marker(Vec2f f_att, double r, double g, double b, std::string ns){
+    auto marker = visualization_msgs::msg::Marker();
+    marker.action = 0;
+    marker.header.frame_id = "odom";
+    marker.header.stamp = this->get_clock()->now();
+    marker.ns = ns;
+    marker.type = visualization_msgs::msg::Marker::ARROW;
+
+    geometry_msgs::msg::Point curr, goal;
+
+    curr.x = robotPos.x;
+    curr.y = robotPos.y;
+    curr.z = 0;
+
+    goal.x = f_att.x;
+    goal.y = f_att.y;
+    goal.z = 0;
+
+    marker.points.push_back(curr);
+    marker.points.push_back(goal);
+
+    marker.scale.x = 0.1;  // shaft diameter
+    marker.scale.y = 0.2;  // head diameter
+    marker.scale.z = 0.2;  // head length
+
+    marker.color.r = r;
+    marker.color.g = g;
+    marker.color.b = b;
+    marker.color.a = 1.0;
+}
+
+
