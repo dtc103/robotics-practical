@@ -2,8 +2,8 @@
 #include <obstacle_avoidance/obstacle_avoidance.h>
 #include <rclcpp/rclcpp.hpp>
 
-#define GOAL_POSITION_X 20.0
-#define GOAL_POSITION_Y -20.0
+#define GOAL_POSITION_X 5
+#define GOAL_POSITION_Y 4.0
 #define ROBOT_SPEED 0.3
 
 int main(int argc, char *argv[]) {

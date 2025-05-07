@@ -13,8 +13,9 @@ def generate_launch_description():
                     {"kAtt": 0.5},
                     {"kRep": 0.4},
                     {"d_thres": 0.4},
-                    {"length": 0.5},
-                    {"width": 0.6},
+                    {"length": 1.0},
+                    {"width": 1.0},
+                    {"segments": 10}
                 ],
             )
         ]

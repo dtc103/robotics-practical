@@ -39,9 +39,24 @@ ament_target_dependencies(obstacle_avoidance_lib
   tf2_geometry_msgs
 )
 
+add_library(potential_field_lib
+  src/potential_field/potential_field.cpp
+)
+ament_target_dependencies(potential_field_lib
+  rclcpp
+  sensor_msgs
+  nav_msgs
+  tf2_ros
+  geometry_msgs
+  std_msgs
+  visualization_msgs
+  tf2_geometry_msgs
+)
+
 add_executable(obstacle_avoidance src/main.cpp)
 target_link_libraries(obstacle_avoidance
   obstacle_avoidance_lib
+  potential_field_lib
 )
 
 ament_target_dependencies(obstacle_avoidance
@@ -57,6 +72,7 @@ ament_target_dependencies(obstacle_avoidance
 
 install(TARGETS
   obstacle_avoidance_lib
+  potential_field_lib
   obstacle_avoidance
   DESTINATION lib/${PROJECT_NAME}
 )

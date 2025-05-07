@@ -11,7 +11,7 @@ using namespace std::chrono_literals;
 
 ObstacleAvoidance::ObstacleAvoidance()
     : Node("obstacle_avoidance"), odomInit(false), laserInit(false),
-      goalPos(20, -20)
+      goalPos(14, 0)
 {
     pubCmdVel = create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
 
@@ -38,7 +38,20 @@ ObstacleAvoidance::ObstacleAvoidance()
     // transforms are available
     tf2MessageFilter->registerCallback(&ObstacleAvoidance::laserCallback, this);
 
-    std::cout << "finished constructor" << std::endl;
+    this->declare_parameter<double>("length", 1.0);
+    this->declare_parameter<double>("width", 1.0);
+    this->declare_parameter<double>("kAtt", 1.0);
+    this->declare_parameter<double>("kRep", 1.0);
+    this->declare_parameter<int>("segments", 1);
+    
+
+    this->length = this->get_parameter("length").as_double();
+    this->width = this->get_parameter("width").as_double();
+    this->kAtt = this->get_parameter("kAtt").as_double();
+    this->kRep = this->get_parameter("kRep").as_double();
+    this->segments = this->get_parameter("segments").as_int();
+    
+    this->pf = std::make_shared<PotentialField>(this->goalPos, this->kAtt, this->kRep, this->segments);
 }
 
 void ObstacleAvoidance::odomCallback(const nav_msgs::msg::Odometry &odom)
@@ -48,7 +61,6 @@ void ObstacleAvoidance::odomCallback(const nav_msgs::msg::Odometry &odom)
     robotPos = Vec2f(odom.pose.pose.position.x, odom.pose.pose.position.y);
     robotYaw = tf2::getYaw(odom.pose.pose.orientation);
 
-    std::cout << "initializing odo" << std::endl;
     odomInit = true;
     if (odomInit && laserInit)
     {
@@ -60,8 +72,6 @@ void ObstacleAvoidance::odomCallback(const nav_msgs::msg::Odometry &odom)
 void ObstacleAvoidance::laserCallback(const sensor_msgs::msg::LaserScan &scan)
 {
     std::lock_guard<std::mutex> guard(mutex);
-
-    std::cout << "CALLBACK CALLED" << std::endl;
 
     laserPoints.clear();
 
@@ -94,15 +104,36 @@ void ObstacleAvoidance::laserCallback(const sensor_msgs::msg::LaserScan &scan)
     }
 }
 
+void ObstacleAvoidance::check_save_zone(){
+    
+    for(auto laserpoint : this->laserPoints){
+        auto laser_vec = (laserpoint - this->robotPos).rotated(-this->robotYaw);
+
+        if(laser_vec.x > 0 && laser_vec.x < this->length && std::abs(laser_vec.y) < this->width / 2){
+            this->obstacle_detected = true;
+            return;
+        }
+    }
+    this->obstacle_detected = false;
+
+}
+
 void ObstacleAvoidance::process()
 {
-
     geometry_msgs::msg::Twist twistMsg;
 
+    check_save_zone();
+
+
+
+
     double distanceToGoal = (goalPos - robotPos).norm();
-    if (distanceToGoal > 0.2)
+    if (distanceToGoal > 0.2 && !this->obstacle_detected)
     {
         double deltaYaw = (goalPos - robotPos).angle() - robotYaw;
+        RCLCPP_INFO(this->get_logger(), "Goal Pos: (%.2f, %.2f); Robot Pos: (%.2f, %.2f); Delta Yaw: %.2f; Robot Yaw: %.2f"
+            , goalPos.x, goalPos.y, robotPos.x, robotPos.y, deltaYaw, robotYaw);
+        
         if (deltaYaw > std::numbers::pi)
         {
             deltaYaw -= 2 * std::numbers::pi;
@@ -112,9 +143,13 @@ void ObstacleAvoidance::process()
             deltaYaw += 2 * std::numbers::pi;
         }
 
+        RCLCPP_INFO(this->get_logger(), "%.2f", deltaYaw);
+        double k = 0.5;
         twistMsg.linear.x = 0.3;
-        twistMsg.angular.z = 
-            std::clamp(deltaYaw, -std::numbers::pi / 8, std::numbers::pi / 8);
+        twistMsg.angular.z = k * deltaYaw;
+    }else{
+        twistMsg.linear.x = 0.0;
+        twistMsg.angular.z = 0.0;
     }
 
     pubCmdVel->publish(twistMsg);

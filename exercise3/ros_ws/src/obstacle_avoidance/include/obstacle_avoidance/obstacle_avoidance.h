@@ -23,6 +23,8 @@
 
 #include "vec2.h"
 
+#include <potential_field/potential_field.h>
+
 class ObstacleAvoidance: public rclcpp::Node {
     public:
         ObstacleAvoidance();
@@ -30,6 +32,7 @@ class ObstacleAvoidance: public rclcpp::Node {
     private:
         void odomCallback(const nav_msgs::msg::Odometry &odom);
         void laserCallback(const sensor_msgs::msg::LaserScan &scan);
+        void check_save_zone();
         void process();
         void visualizeMarkers();
 
@@ -37,10 +40,18 @@ class ObstacleAvoidance: public rclcpp::Node {
         bool odomInit;
         bool laserInit;
 
+        std::shared_ptr<PotentialField> pf;
+        double kAtt;
+        double kRep;
+        int segments;
+
         Vec2f robotPos;
         double robotYaw;
         Vec2f goalPos;
         std::vector<Vec2f> laserPoints;
+
+        double width;
+        double length;
 
         bool obstacle_detected = false;
         Vec2<double> monitor_zone = Vec2<double>(2.0, 2.0);
