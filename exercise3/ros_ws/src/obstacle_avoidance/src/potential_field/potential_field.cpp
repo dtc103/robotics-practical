@@ -11,16 +11,15 @@ Vec2f PotentialField::get_f_att(Vec2f current_position){
 std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, std::vector<Vec2f> laser_positions){
     size_t totalSize = laser_positions.size();
     std::vector<std::vector<Vec2f>> result(this->segments);
-    
-    size_t baseSize = totalSize / this->segments;
-    size_t remainder = totalSize % this->segments;
-    
-    auto it = laser_positions.begin();
-    for (size_t i = 0; i < this->segments; ++i) {
-        size_t segmentSize = baseSize + (i < remainder ? 1 : 0);
-        result[i] = std::vector<Vec2f>(it, it + segmentSize);
-        it += segmentSize;
+
+    auto min_rel_angle = -std::numbers::pi / 2;
+    auto max_rel_angle = std::numbers::pi / 2;
+
+    std::vector<std::tuple<int, double>> laser_angles;
+    for(auto pos : laser_positions){
+            
     }
+
     std::vector<Vec2f> closest_elements;
     auto map_func = [&](const Vec2f& a){return (a - current_pos).norm();};
     for(auto segment : result){
@@ -33,9 +32,7 @@ std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, std::vector<Vec2
         ));
     }
 
-    for (auto el : closest_elements){
-        std::cout << el.x << " " << el.y << std::endl;
-    }
+    return closest_elements;
 
 
     

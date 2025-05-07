@@ -36,7 +36,7 @@ class ObstacleAvoidance: public rclcpp::Node {
         void process();
         void visualizeMarkers();
         void publish_marker(Vec2f f_att, double r, double g, double b, std::string ns);
-        void publish_markers();
+        void publish_markers(std::vector<Vec2f> f_rep, double r, double g, double b, std::string ns);
 
         std::mutex mutex;
         bool odomInit;
