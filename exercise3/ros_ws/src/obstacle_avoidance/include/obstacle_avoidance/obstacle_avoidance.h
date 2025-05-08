@@ -58,7 +58,7 @@ class ObstacleAvoidance: public rclcpp::Node {
         double length;
 
         bool obstacle_detected = false;
-        Vec2<double> monitor_zone = Vec2<double>(2.0, 2.0);
+        Vec2f monitor_zone;
 
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pubCmdVel;
 

@@ -44,7 +44,6 @@ ObstacleAvoidance::ObstacleAvoidance()
     this->declare_parameter<double>("kRep", 1.0);
     this->declare_parameter<int>("segments", 1);
     this->declare_parameter<double>("d_thres", 1.0);
-    
 
     this->length = this->get_parameter("length").as_double();
     this->width = this->get_parameter("width").as_double();
@@ -56,6 +55,8 @@ ObstacleAvoidance::ObstacleAvoidance()
     this->pf = std::make_shared<PotentialField>(this->goalPos, this->kAtt, this->kRep, this->rho_0, this->segments);
     this->f_att_publisher = create_publisher<visualization_msgs::msg::Marker>("/att_marker", 10);
     this->f_rep_publisher = create_publisher<visualization_msgs::msg::MarkerArray>("/rep_marker", 10);
+
+    this->monitor_zone = Vec2f(this->width, this->length);
 }
 
 void ObstacleAvoidance::odomCallback(const nav_msgs::msg::Odometry &odom)
@@ -68,7 +69,6 @@ void ObstacleAvoidance::odomCallback(const nav_msgs::msg::Odometry &odom)
     odomInit = true;
     if (odomInit && laserInit)
     {
-        std::cout << "processing" << std::endl;
         process();
     }
 }

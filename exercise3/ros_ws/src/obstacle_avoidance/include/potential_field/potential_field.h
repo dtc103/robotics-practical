@@ -27,14 +27,14 @@ class PotentialField{
         Vec2f get_total_force(std::vector<Vec2f> f_reps, Vec2f f_att);
 
     private:
+        double rotational_scaling(double k_rep_max, double angle);
+
         Vec2f goal_position;
         double k_att;
         double k_rep;
         int segments;
         double rho_0;
 };
-
-
 
 
 #endif

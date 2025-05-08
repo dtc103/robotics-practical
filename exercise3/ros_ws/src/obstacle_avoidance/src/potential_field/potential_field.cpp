@@ -8,36 +8,37 @@ Vec2f PotentialField::get_f_att(Vec2f current_position){
 }
 
 std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw, std::vector<Vec2f> laser_positions, double rho_0){
-    auto compare_func_idx_based = [&](const int& idx){
-        auto x = laser_positions[idx].x;
-        auto y = laser_positions[idx].y;
-
-        double magic_number = 100000.0;
-        if(x > magic_number || x < -magic_number){
-            x = magic_number;
-        }
-        if(y > magic_number || y < -magic_number){
-            y = magic_number;
-        }
-
-        auto norm = (Vec2f(x, y) - current_pos).norm();
-        if(norm > magic_number){
-            return magic_number;
-        }
-        return norm;
-    };
-
-    // save index of lasaer_positioins and corresponding angles and norm
+    // save index of lasaer_positions, corresponding angles and norm
     std::vector<std::tuple<int, double, double>> laser_data;
+    double max_norm = 100000.0;
     for(int i = 0; i < laser_positions.size(); ++i){
-        laser_data.push_back(std::make_tuple(i, (laser_positions[i] - current_pos).rotated(-curr_yaw).angle(), (laser_positions[i] - current_pos).norm()));
+        laser_data.push_back(
+            std::make_tuple(
+                i, 
+                (laser_positions[i] - current_pos).rotated(-curr_yaw).angle(), 
+                (laser_positions[i] - current_pos).norm() > max_norm ? (laser_positions[i] - current_pos).norm() : max_norm 
+            )
+        );
     }
 
-    std::vector<double> pure_angles(laser_data.size());
-    std::transform(laser_data.begin(), laser_data.end(), pure_angles.begin(), [](std::tuple<int, double, double> el){return std::get<1>(el);});
+    // get angle of most left laser beam
+    auto min_rel_angle = std::get<1>(
+        *std::min_element(
+            laser_data.begin(), 
+            laser_data.end(), 
+            [](auto a, auto b){return std::get<1>(a) < std::get<1>(a);}
+        )
+    );
 
-    auto min_rel_angle = *std::min_element(pure_angles.begin(), pure_angles.end());
-    auto max_rel_angle = *std::max_element(pure_angles.begin(), pure_angles.end());
+    // get angle of most right laser beam
+    auto max_rel_angle = std::get<1>(
+        *std::max_element(
+            laser_data.begin(), 
+            laser_data.end(), 
+            [](auto a, auto b){return std::get<1>(a) > std::get<1>(a);
+            }
+        )
+    );
 
     std::vector<std::vector<int>> laser_segment_idxs;
     auto angle_step = (max_rel_angle - min_rel_angle) / this->segments;
@@ -51,27 +52,23 @@ std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw,
         laser_segment_idxs.push_back(segment_idxs);
     }
 
-
-    // for(auto segment : laser_segment_idxs){
-    //     std::cout << "Segment size: " << segment.size() << std::endl;
-    // }
-    std::cout << laser_segment_idxs.size() << std::endl;
-
     std::vector<Vec2f> closest_elements;
-
     for(auto segment_idxs : laser_segment_idxs){
+        if(segment_idxs.empty()){
+            continue;
+        }
         auto closest_idx = *std::min_element(
             segment_idxs.begin(),
             segment_idxs.end(),
             [&](const int& idx_a, const int& idx_b) {
-                return compare_func_idx_based(idx_a) < compare_func_idx_based(idx_b);
+                return std::get<2>(laser_data[idx_a]) < std::get<2>(laser_data[idx_b]);
             }
         );
         double rho_q = std::get<2>(laser_data[closest_idx]);
         if(rho_q > this->rho_0){
             closest_elements.push_back(Vec2f(0, 0));
         }else{  
-            auto vector = this->k_rep * ((current_pos - laser_positions[closest_idx]) * (1.0 / rho_q)) * (1.0 / rho_q - 1.0 / rho_0) * (1.0 / std::pow(rho_q, 2));
+            auto vector = this->rotational_scaling(this->k_rep, std::get<1>(laser_data[closest_idx])) * ((current_pos - laser_positions[closest_idx]) * (1.0 / rho_q)) * (1.0 / rho_q - 1.0 / rho_0) * (1.0 / std::pow(rho_q, 2));
             closest_elements.push_back(vector);
         }
         
@@ -89,4 +86,11 @@ Vec2f PotentialField::get_total_force(std::vector<Vec2f> f_reps, Vec2f f_att){
     }
 
     return f_tot;
+}
+
+double PotentialField::rotational_scaling(double k_rep_max, double angle){
+    double a = k_rep_max;
+    double b = std::numbers::pi / 2;
+
+    return a * std::exp(-b * std::pow(angle, 2));
 }
