@@ -44,13 +44,10 @@ class ObstacleAvoidance: public rclcpp::Node {
         bool laserInit;
 
         std::shared_ptr<PotentialField> pf;
-        double kAtt;
-        double kRep;
-        int segments;
-        double rho_0;
 
         Vec2f robotPos;
         double robotYaw;
+        double rot_gain;
         Vec2f goalPos;
         std::vector<Vec2f> laserPoints;
 

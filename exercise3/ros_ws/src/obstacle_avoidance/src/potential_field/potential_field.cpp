@@ -1,6 +1,7 @@
 #include <potential_field/potential_field.h>
 
-PotentialField::PotentialField(Vec2f goal_position, double k_att, double k_rep, double rho_0, size_t segments):goal_position(goal_position), k_att(k_att), k_rep(k_rep), rho_0(rho_0), segments(segments){
+PotentialField::PotentialField(Vec2f goal_position, double k_att, double k_rep, double var_rep, double rho_0, size_t segments) 
+    : goal_position(goal_position), k_att(k_att), k_rep(k_rep), var_rep(var_rep), rho_0(rho_0), segments(segments){
     
 }
 
@@ -11,16 +12,14 @@ Vec2f PotentialField::get_f_att(Vec2f current_position){
 std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw, std::vector<Vec2f> laser_positions){
     // save index of lasaer_positions, corresponding angles and norm
 
-    std::cout << this->rho_0 << std::endl;
-
     std::vector<std::tuple<int, double, double>> laser_data;
-    double max_norm = 100000.0;
+    double max_norm = 10000.0;
     for(int i = 0; i < laser_positions.size(); ++i){
         laser_data.push_back(
             std::make_tuple(
                 i, 
                 (laser_positions[i] - current_pos).rotated(-curr_yaw).angle(), 
-                (laser_positions[i] - current_pos).norm()
+                (laser_positions[i] - current_pos).norm() > max_norm ? (laser_positions[i] - current_pos).norm() : max_norm
             )
         );
     }
@@ -30,7 +29,9 @@ std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw,
         *std::min_element(
             laser_data.begin(), 
             laser_data.end(), 
-            [](auto a, auto b){return std::get<1>(a) < std::get<1>(b);}
+            [](auto a, auto b){
+                return std::get<1>(a) < std::get<1>(b);
+            }
         )
     );
 
@@ -39,7 +40,8 @@ std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw,
         *std::max_element(
             laser_data.begin(), 
             laser_data.end(), 
-            [](auto a, auto b){return std::get<1>(a) < std::get<1>(b);
+            [](auto a, auto b){
+                return std::get<1>(a) < std::get<1>(b);
             }
         )
     );
@@ -49,7 +51,7 @@ std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw,
     for(size_t i = 0; i < this->segments; ++i){
         std::vector<int> segment_idxs;
         for(auto laser_angle : laser_data){
-            if(std::get<1>(laser_angle) >= min_rel_angle + angle_step * i && std::get<1>(laser_angle) <= min_rel_angle + angle_step * (i + 1)){
+            if(std::get<1>(laser_angle) >= min_rel_angle + angle_step * i && std::get<1>(laser_angle) < min_rel_angle + angle_step * (i + 1)){
                 segment_idxs.push_back(std::get<0>(laser_angle));
             }
         }
@@ -61,6 +63,8 @@ std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw,
         if(segment_idxs.empty()){
             continue;
         }
+
+        // returns the index for the closes laser beam
         auto closest_idx = *std::min_element(
             segment_idxs.begin(),
             segment_idxs.end(),
@@ -68,12 +72,13 @@ std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw,
                 return std::get<2>(laser_data[idx_a]) < std::get<2>(laser_data[idx_b]);
             }
         );
+        
         double rho_q = std::get<2>(laser_data[closest_idx]);
         if(rho_q > this->rho_0){
             closest_elements.push_back(Vec2f(0, 0));
         }else{  
-            std::cout << this->rotational_scaling(rho_0, std::get<1>(laser_data[closest_idx])) << std::endl;
-            auto vector = this->rotational_scaling(this->k_rep, std::get<1>(laser_data[closest_idx])) * ((current_pos - laser_positions[closest_idx]) * (1.0 / rho_q)) * (1.0 / rho_q - 1.0 / rho_0) * (1.0 / std::pow(rho_q, 2));
+            // we also divided the k_rep by the amount of sesgements, so more segments don't start adding up the kRep attribute
+            auto vector =  (this->rotational_scaling(std::get<1>(laser_data[closest_idx])) / this->segments)  * ((current_pos - laser_positions[closest_idx]) * (1.0 / rho_q)) * (1.0 / rho_q - 1.0 / rho_0) * (1.0 / std::pow(rho_q, 2));
             closest_elements.push_back(vector);
         }
     }
@@ -92,9 +97,9 @@ Vec2f PotentialField::get_total_force(std::vector<Vec2f> f_reps, Vec2f f_att){
     return f_tot;
 }
 
-double PotentialField::rotational_scaling(double k_rep_max, double angle){
-    double a = k_rep_max;
-    double b = std::numbers::pi / 2;
+double PotentialField::rotational_scaling(double angle){
+    double a = this->k_rep;
+    double b = this->var_rep;
 
     return a * std::exp(-b * std::pow(angle, 2));
 }

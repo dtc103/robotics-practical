@@ -9,10 +9,7 @@
 
 using namespace std::chrono_literals;
 
-ObstacleAvoidance::ObstacleAvoidance()
-    : Node("obstacle_avoidance"), odomInit(false), laserInit(false),
-      goalPos(14, 0)
-{
+ObstacleAvoidance::ObstacleAvoidance() : Node("obstacle_avoidance"), odomInit(false), laserInit(false) {
     pubCmdVel = create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
 
     subOdom = create_subscription<nav_msgs::msg::Odometry>(
@@ -40,19 +37,31 @@ ObstacleAvoidance::ObstacleAvoidance()
 
     this->declare_parameter<double>("length", 1.0);
     this->declare_parameter<double>("width", 1.0);
-    this->declare_parameter<double>("kAtt", 1.0);
-    this->declare_parameter<double>("kRep", 1.0);
-    this->declare_parameter<int>("segments", 1);
-    this->declare_parameter<double>("d_thres", 1.0);
+    this->declare_parameter<double>("kAtt", 0.5);
+    this->declare_parameter<double>("kRep", 0.4);
+    this->declare_parameter<double>("var_rep", 1.57079);
+    this->declare_parameter<int>("segments", 10);
+    this->declare_parameter<double>("d_thres", 0.4);
+    this->declare_parameter<double>("x_goal", 0.0);
+    this->declare_parameter<double>("y_goal", 0.0);
+    this->declare_parameter<double>("rot_gain", 0.5);
+    
 
     this->length = this->get_parameter("length").as_double();
     this->width = this->get_parameter("width").as_double();
-    this->kAtt = this->get_parameter("kAtt").as_double();
-    this->kRep = this->get_parameter("kRep").as_double();
-    this->segments = this->get_parameter("segments").as_int();
-    this->rho_0 = this->get_parameter("d_thres").as_double();
+    this->rot_gain = this->get_parameter("rot_gain").as_double();
+
+    auto kAtt = this->get_parameter("kAtt").as_double();
+    auto kRep = this->get_parameter("kRep").as_double();
+    auto var_rep = this->get_parameter("var_rep").as_double();
+    auto segments = this->get_parameter("segments").as_int();
+    auto rho_0 = this->get_parameter("d_thres").as_double();
+
+    auto x_goal = this->get_parameter("x_goal").as_double();
+    auto y_goal = this->get_parameter("y_goal").as_double();
+    this->goalPos = Vec2f(x_goal, y_goal);
     
-    this->pf = std::make_shared<PotentialField>(this->goalPos, this->kAtt, this->kRep, this->rho_0, this->segments);
+    this->pf = std::make_shared<PotentialField>(this->goalPos, kAtt, kRep, var_rep, rho_0, segments);
     this->f_att_publisher = create_publisher<visualization_msgs::msg::Marker>("/att_marker", 10);
     this->f_rep_publisher = create_publisher<visualization_msgs::msg::MarkerArray>("/rep_marker", 10);
 
@@ -128,16 +137,13 @@ void ObstacleAvoidance::process()
 
     check_save_zone();
 
-    Vec2f f_att = this->pf->get_f_att(this->robotPos);
-
+    auto f_att = this->pf->get_f_att(this->robotPos);
     auto f_reps = this->pf->get_f_rep(this->robotPos, this->robotYaw, this->laserPoints);
-
     auto f_tot = this->pf->get_total_force(f_reps, f_att);
 
     this->publish_marker(f_att, 0.0, 1.0, 0.0, "potential", 0);
     this->publish_marker(f_tot, 0.0, 0.0, 1.0, "potential", 1);
     this->publish_markers(f_reps, 1.0, 0.0, 0.0, "potential");
-    
 
     double distanceToGoal = (goalPos - robotPos).norm();
     if (distanceToGoal > 0.2 && !this->obstacle_detected)
@@ -154,9 +160,8 @@ void ObstacleAvoidance::process()
             deltaYaw += 2 * std::numbers::pi;
         }
 
-        double k = 0.5;
         twistMsg.linear.x = 0.3;
-        twistMsg.angular.z = k * deltaYaw;
+        twistMsg.angular.z = this->rot_gain * deltaYaw;
     }else{
         twistMsg.linear.x = 0.0;
         twistMsg.angular.z = 0.0;
