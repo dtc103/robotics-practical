@@ -35,8 +35,9 @@ class ObstacleAvoidance: public rclcpp::Node {
         void check_save_zone();
         void process();
         void visualizeMarkers();
-        void publish_marker(Vec2f f_att, double r, double g, double b, std::string ns);
+        void publish_marker(Vec2f f_att, double r, double g, double b, std::string ns, int id);
         void publish_markers(std::vector<Vec2f> f_rep, double r, double g, double b, std::string ns);
+        visualization_msgs::msg::Marker create_marker(Vec2f vec, double r, double g, double b, std::string ns, int id);
 
         std::mutex mutex;
         bool odomInit;
@@ -46,6 +47,7 @@ class ObstacleAvoidance: public rclcpp::Node {
         double kAtt;
         double kRep;
         int segments;
+        double rho_0;
 
         Vec2f robotPos;
         double robotYaw;

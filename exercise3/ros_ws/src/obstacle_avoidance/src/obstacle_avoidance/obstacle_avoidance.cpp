@@ -43,6 +43,7 @@ ObstacleAvoidance::ObstacleAvoidance()
     this->declare_parameter<double>("kAtt", 1.0);
     this->declare_parameter<double>("kRep", 1.0);
     this->declare_parameter<int>("segments", 1);
+    this->declare_parameter<double>("d_thres", 1.0);
     
 
     this->length = this->get_parameter("length").as_double();
@@ -50,8 +51,9 @@ ObstacleAvoidance::ObstacleAvoidance()
     this->kAtt = this->get_parameter("kAtt").as_double();
     this->kRep = this->get_parameter("kRep").as_double();
     this->segments = this->get_parameter("segments").as_int();
+    this->rho_0 = this->get_parameter("d_thres").as_double();
     
-    this->pf = std::make_shared<PotentialField>(this->goalPos, this->kAtt, this->kRep, this->segments);
+    this->pf = std::make_shared<PotentialField>(this->goalPos, this->kAtt, this->kRep, this->rho_0, this->segments);
     this->f_att_publisher = create_publisher<visualization_msgs::msg::Marker>("/att_marker", 10);
     this->f_rep_publisher = create_publisher<visualization_msgs::msg::MarkerArray>("/rep_marker", 10);
 }
@@ -127,14 +129,15 @@ void ObstacleAvoidance::process()
     check_save_zone();
 
     Vec2f f_att = this->pf->get_f_att(this->robotPos);
-    auto f_reps = this->pf->get_f_rep(this->robotPos, this->laserPoints);
-    for(int i = 0; i < f_reps.size(); ++i){
-        RCLCPP_INFO(this->get_logger(), "LASER COOORDS %d: (%.2f, %.2f)", i, f_reps[i].x, f_reps[i].y);
-    }
 
-    this->publish_marker(f_att, 0.0, 1.0, 0.0, "potential");
+    auto f_reps = this->pf->get_f_rep(this->robotPos, this->robotYaw, this->laserPoints, 2.0);
 
+    auto f_tot = this->pf->get_total_force(f_reps, f_att);
 
+    this->publish_marker(f_att, 0.0, 1.0, 0.0, "potential", 0);
+    this->publish_marker(f_tot, 0.0, 0.0, 1.0, "potential", 1);
+    this->publish_markers(f_reps, 1.0, 0.0, 0.0, "potential");
+    
 
     double distanceToGoal = (goalPos - robotPos).norm();
     if (distanceToGoal > 0.2 && !this->obstacle_detected)
@@ -164,13 +167,32 @@ void ObstacleAvoidance::process()
     pubCmdVel->publish(twistMsg);
 }
 
-void ObstacleAvoidance::publish_marker(Vec2f f_att, double r, double g, double b, std::string ns){
+void ObstacleAvoidance::publish_marker(Vec2f f_att, double r, double g, double b, std::string ns, int id){
+    auto marker = this->create_marker(f_att, r, g, b, ns, id);
+
+    this->f_att_publisher->publish(marker);
+}
+
+void ObstacleAvoidance::publish_markers(std::vector<Vec2f> f_rep, double r, double g, double b, std::string ns){
+    visualization_msgs::msg::MarkerArray markers;
+
+    for(int i = 0; i < f_rep.size(); ++i){
+        markers.markers.push_back(this->create_marker(f_rep[i], r, g, b, ns, i + 2));
+    }
+
+    this->f_rep_publisher->publish(markers);
+}
+
+visualization_msgs::msg::Marker ObstacleAvoidance::create_marker(Vec2f vec, double r, double g, double b, std::string ns, int id){
     auto marker = visualization_msgs::msg::Marker();
     marker.action = 0;
     marker.header.frame_id = "odom";
     marker.header.stamp = this->get_clock()->now();
     marker.ns = ns;
     marker.type = visualization_msgs::msg::Marker::ARROW;
+    marker.id = id;
+
+    marker.lifetime = rclcpp::Duration::from_seconds(0.5);
 
     geometry_msgs::msg::Point curr, goal;
 
@@ -178,8 +200,8 @@ void ObstacleAvoidance::publish_marker(Vec2f f_att, double r, double g, double b
     curr.y = robotPos.y;
     curr.z = 0;
 
-    goal.x = robotPos.x + f_att.x;
-    goal.y = robotPos.y + f_att.y;
+    goal.x = robotPos.x + vec.x;
+    goal.y = robotPos.y + vec.y;
     goal.z = 0;
 
     marker.points.push_back(curr);
@@ -194,12 +216,7 @@ void ObstacleAvoidance::publish_marker(Vec2f f_att, double r, double g, double b
     marker.color.b = b;
     marker.color.a = 1.0;
 
-    this->f_att_publisher->publish(marker);
-}
-
-void ObstacleAvoidance::publish_markers(std::vector<Vec2f> f_rep, double r, double g, double b, std::string ns){
-    auto markers = visualization_msgs::msg::MarkerArray();
-    
+    return marker;
 }
 
 
