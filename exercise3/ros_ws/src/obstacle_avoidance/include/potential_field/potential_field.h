@@ -23,7 +23,7 @@ class PotentialField{
     public:
         PotentialField(Vec2f goal_position, double k_att, double k_rep, double rho_0, size_t segments);
         Vec2f get_f_att(Vec2f current_position);
-        std::vector<Vec2f> get_f_rep(Vec2f current_pos, double curr_yaw, std::vector<Vec2f> laser_positions, double rho_0);
+        std::vector<Vec2f> get_f_rep(Vec2f current_pos, double curr_yaw, std::vector<Vec2f> laser_positions);
         Vec2f get_total_force(std::vector<Vec2f> f_reps, Vec2f f_att);
 
     private:
@@ -32,8 +32,8 @@ class PotentialField{
         Vec2f goal_position;
         double k_att;
         double k_rep;
-        int segments;
         double rho_0;
+        int segments;
 };
 
 

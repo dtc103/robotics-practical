@@ -130,7 +130,7 @@ void ObstacleAvoidance::process()
 
     Vec2f f_att = this->pf->get_f_att(this->robotPos);
 
-    auto f_reps = this->pf->get_f_rep(this->robotPos, this->robotYaw, this->laserPoints, 2.0);
+    auto f_reps = this->pf->get_f_rep(this->robotPos, this->robotYaw, this->laserPoints);
 
     auto f_tot = this->pf->get_total_force(f_reps, f_att);
 
@@ -142,9 +142,8 @@ void ObstacleAvoidance::process()
     double distanceToGoal = (goalPos - robotPos).norm();
     if (distanceToGoal > 0.2 && !this->obstacle_detected)
     {
-        double deltaYaw = (goalPos - robotPos).angle() - robotYaw;
-        //RCLCPP_INFO(this->get_logger(), "Goal Pos: (%.2f, %.2f); Robot Pos: (%.2f, %.2f); Delta Yaw: %.2f; Robot Yaw: %.2f"
-        //    , goalPos.x, goalPos.y, robotPos.x, robotPos.y, deltaYaw, robotYaw);
+        //double deltaYaw = (goalPos - robotPos).angle() - robotYaw;
+        double deltaYaw = f_tot.angle() - robotYaw;
         
         if (deltaYaw > std::numbers::pi)
         {
@@ -155,7 +154,6 @@ void ObstacleAvoidance::process()
             deltaYaw += 2 * std::numbers::pi;
         }
 
-        //RCLCPP_INFO(this->get_logger(), "%.2f", deltaYaw);
         double k = 0.5;
         twistMsg.linear.x = 0.3;
         twistMsg.angular.z = k * deltaYaw;
@@ -176,7 +174,7 @@ void ObstacleAvoidance::publish_marker(Vec2f f_att, double r, double g, double b
 void ObstacleAvoidance::publish_markers(std::vector<Vec2f> f_rep, double r, double g, double b, std::string ns){
     visualization_msgs::msg::MarkerArray markers;
 
-    for(int i = 0; i < f_rep.size(); ++i){
+    for(size_t i = 0; i < f_rep.size(); ++i){
         markers.markers.push_back(this->create_marker(f_rep[i], r, g, b, ns, i + 2));
     }
 
