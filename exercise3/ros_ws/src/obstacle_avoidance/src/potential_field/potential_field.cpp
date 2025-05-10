@@ -6,10 +6,14 @@ PotentialField::PotentialField(Vec2f goal_position, double k_att, double k_rep, 
 }
 
 Vec2f PotentialField::get_f_att(Vec2f current_position){
-    return -this->k_att * (current_position - this->goal_position);
+    auto vec = -this->k_att * (current_position - this->goal_position);
+    if(vec.norm() < 1.0){
+        vec = -10.0 * (current_position - this->goal_position);
+    }
+    return vec;
 }
 
-std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw, std::vector<Vec2f> laser_positions){
+std::vector<std::tuple<int, Vec2f>> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw, std::vector<Vec2f> laser_positions){
     // save index of lasaer_positions, corresponding angles and norm
 
     std::vector<std::tuple<int, double, double>> laser_data;
@@ -19,7 +23,7 @@ std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw,
             std::make_tuple(
                 i, 
                 (laser_positions[i] - current_pos).rotated(-curr_yaw).angle(), 
-                (laser_positions[i] - current_pos).norm() > max_norm ? (laser_positions[i] - current_pos).norm() : max_norm
+                (laser_positions[i] - current_pos).norm() < max_norm ? (laser_positions[i] - current_pos).norm() : max_norm
             )
         );
     }
@@ -58,7 +62,7 @@ std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw,
         laser_segment_idxs.push_back(segment_idxs);
     }
 
-    std::vector<Vec2f> closest_elements;
+    std::vector<std::tuple<int, Vec2f>> closest_elements;
     for(auto segment_idxs : laser_segment_idxs){
         if(segment_idxs.empty()){
             continue;
@@ -75,11 +79,11 @@ std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw,
         
         double rho_q = std::get<2>(laser_data[closest_idx]);
         if(rho_q > this->rho_0){
-            closest_elements.push_back(Vec2f(0, 0));
+            continue;
         }else{  
             // we also divided the k_rep by the amount of sesgements, so more segments don't start adding up the kRep attribute
-            auto vector =  (this->rotational_scaling(std::get<1>(laser_data[closest_idx])) / this->segments)  * ((current_pos - laser_positions[closest_idx]) * (1.0 / rho_q)) * (1.0 / rho_q - 1.0 / rho_0) * (1.0 / std::pow(rho_q, 2));
-            closest_elements.push_back(vector);
+            auto vector =  (this->rotational_scaling(std::get<1>(laser_data[closest_idx])) / this->segments) * (1.0 / rho_q - 1.0 / rho_0) * (1.0 / std::pow(rho_q, 2)) * ((current_pos - laser_positions[closest_idx]) * (1.0 / rho_q)) ;
+            closest_elements.push_back(std::make_tuple(closest_idx, vector));
         }
     }
 
@@ -87,11 +91,11 @@ std::vector<Vec2f> PotentialField::get_f_rep(Vec2f current_pos, double curr_yaw,
    
 }
 
-Vec2f PotentialField::get_total_force(std::vector<Vec2f> f_reps, Vec2f f_att){
+Vec2f PotentialField::get_total_force(std::vector<std::tuple<int, Vec2f>> f_reps, Vec2f f_att){
     Vec2f f_tot = f_att;
 
     for(auto f_rep : f_reps){
-        f_tot += f_rep;
+        f_tot += std::get<1>(f_rep);
     }
 
     return f_tot;

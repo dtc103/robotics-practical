@@ -171,22 +171,22 @@ void ObstacleAvoidance::process()
 }
 
 void ObstacleAvoidance::publish_marker(Vec2f f_att, double r, double g, double b, std::string ns, int id){
-    auto marker = this->create_marker(f_att, r, g, b, ns, id);
+    auto marker = this->create_marker(this->robotPos, f_att, r, g, b, ns, id);
 
     this->f_att_publisher->publish(marker);
 }
 
-void ObstacleAvoidance::publish_markers(std::vector<Vec2f> f_rep, double r, double g, double b, std::string ns){
+void ObstacleAvoidance::publish_markers(std::vector<std::tuple<int, Vec2f>> f_rep, double r, double g, double b, std::string ns){
     visualization_msgs::msg::MarkerArray markers;
 
     for(size_t i = 0; i < f_rep.size(); ++i){
-        markers.markers.push_back(this->create_marker(f_rep[i], r, g, b, ns, i + 2));
+        markers.markers.push_back(this->create_marker(this->laserPoints[std::get<0>(f_rep[i])], std::get<1>(f_rep[i]), r, g, b, ns, i + 2));
     }
 
     this->f_rep_publisher->publish(markers);
 }
 
-visualization_msgs::msg::Marker ObstacleAvoidance::create_marker(Vec2f vec, double r, double g, double b, std::string ns, int id){
+visualization_msgs::msg::Marker ObstacleAvoidance::create_marker(Vec2f origin, Vec2f dir, double r, double g, double b, std::string ns, int id){
     auto marker = visualization_msgs::msg::Marker();
     marker.action = 0;
     marker.header.frame_id = "odom";
@@ -197,18 +197,18 @@ visualization_msgs::msg::Marker ObstacleAvoidance::create_marker(Vec2f vec, doub
 
     marker.lifetime = rclcpp::Duration::from_seconds(0.5);
 
-    geometry_msgs::msg::Point curr, goal;
+    geometry_msgs::msg::Point from, to;
 
-    curr.x = robotPos.x;
-    curr.y = robotPos.y;
-    curr.z = 0;
+    from.x = origin.x;
+    from.y = origin.y;
+    from.z = 0;
 
-    goal.x = robotPos.x + vec.x;
-    goal.y = robotPos.y + vec.y;
-    goal.z = 0;
+    to.x = origin.x + dir.x;
+    to.y = origin.y + dir.y;
+    to.z = 0;
 
-    marker.points.push_back(curr);
-    marker.points.push_back(goal);
+    marker.points.push_back(from);
+    marker.points.push_back(to);
 
     marker.scale.x = 0.1;  // shaft diameter
     marker.scale.y = 0.2;  // head diameter
