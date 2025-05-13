@@ -18,12 +18,18 @@ std::vector<std::tuple<int, Vec2f>> PotentialField::get_f_rep(Vec2f current_pos,
 
     std::vector<std::tuple<int, double, double>> laser_data;
     double max_norm = 10000.0;
+    double min_norm = 0.25;
+
     for(int i = 0; i < laser_positions.size(); ++i){
+        auto laser_norm = (laser_positions[i] - current_pos).norm();
+        if(laser_norm < min_norm || laser_norm > max_norm){
+            laser_norm = max_norm;
+        }
         laser_data.push_back(
             std::make_tuple(
                 i, 
                 (laser_positions[i] - current_pos).rotated(-curr_yaw).angle(), 
-                (laser_positions[i] - current_pos).norm() < max_norm ? (laser_positions[i] - current_pos).norm() : max_norm
+                laser_norm
             )
         );
     }
@@ -88,7 +94,6 @@ std::vector<std::tuple<int, Vec2f>> PotentialField::get_f_rep(Vec2f current_pos,
     }
 
     return closest_elements;
-   
 }
 
 Vec2f PotentialField::get_total_force(std::vector<std::tuple<int, Vec2f>> f_reps, Vec2f f_att){

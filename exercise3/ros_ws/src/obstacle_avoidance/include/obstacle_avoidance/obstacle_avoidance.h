@@ -35,7 +35,7 @@ class ObstacleAvoidance: public rclcpp::Node {
         void check_save_zone();
         void process();
         void visualizeMarkers();
-        void publish_marker(Vec2f f_att, double r, double g, double b, std::string ns, int id);
+        void publish_marker(Vec2f f_att, double r, double g, double b, std::string ns, int id, bool is_tot);
         void publish_markers(std::vector<std::tuple<int,Vec2f>> f_rep, double r, double g, double b, std::string ns);
         visualization_msgs::msg::Marker create_marker(Vec2f origin, Vec2f dir, double r, double g, double b, std::string ns, int id);
 
@@ -62,6 +62,7 @@ class ObstacleAvoidance: public rclcpp::Node {
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subOdom;
 
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr f_att_publisher;
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr f_tot_publisher;
         rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr f_rep_publisher;
 
         std::shared_ptr<tf2_ros::Buffer> tf2Buffer;

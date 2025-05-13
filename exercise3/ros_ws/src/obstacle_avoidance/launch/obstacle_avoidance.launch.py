@@ -13,7 +13,7 @@ def generate_launch_description():
             DeclareLaunchArgument("d_thres", default_value="3.0", description="Threshold for the repulsive calculation"),
             DeclareLaunchArgument("length", default_value="0.5", description="Length of the death zone"),
             DeclareLaunchArgument("width", default_value="0.5", description="Width of the death zone"),
-            DeclareLaunchArgument("segments", default_value="20", description="Number of laser segments"),
+            DeclareLaunchArgument("segments", default_value="10", description="Number of laser segments"),
             DeclareLaunchArgument("x_goal", default_value="0.0", description="x-coordinate of the goal position"),
             DeclareLaunchArgument("y_goal", default_value="0.0", description="y-coordinate of the goal position"),
             DeclareLaunchArgument("rot_gain", default_value="0.5", description="Gain parameter for angular motion"),

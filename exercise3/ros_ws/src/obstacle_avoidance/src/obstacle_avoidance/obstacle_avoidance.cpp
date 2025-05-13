@@ -25,7 +25,7 @@ ObstacleAvoidance::ObstacleAvoidance() : Node("obstacle_avoidance"), odomInit(fa
     tf2Buffer->setCreateTimerInterface(timer_interface);
     tf2Listener = std::make_shared<tf2_ros::TransformListener>(*tf2Buffer);
 
-    subLaser.subscribe(this, "/base_scan");
+    subLaser.subscribe(this, "/scan"); // /base_scan only in simulator
     tf2MessageFilter =
         std::make_shared<tf2_ros::MessageFilter<sensor_msgs::msg::LaserScan>>(
             subLaser, *tf2Buffer, "odom", 3, get_node_logging_interface(),
@@ -63,6 +63,7 @@ ObstacleAvoidance::ObstacleAvoidance() : Node("obstacle_avoidance"), odomInit(fa
     
     this->pf = std::make_shared<PotentialField>(this->goalPos, kAtt, kRep, var_rep, rho_0, segments);
     this->f_att_publisher = create_publisher<visualization_msgs::msg::Marker>("/att_marker", 10);
+    this->f_tot_publisher = create_publisher<visualization_msgs::msg::Marker>("/tot_marker", 10);
     this->f_rep_publisher = create_publisher<visualization_msgs::msg::MarkerArray>("/rep_marker", 10);
 
     this->monitor_zone = Vec2f(this->width, this->length);
@@ -118,11 +119,12 @@ void ObstacleAvoidance::laserCallback(const sensor_msgs::msg::LaserScan &scan)
 }
 
 void ObstacleAvoidance::check_save_zone(){
-    
+
+    auto shift = 0.07;
     for(auto laserpoint : this->laserPoints){
         auto laser_vec = (laserpoint - this->robotPos).rotated(-this->robotYaw);
 
-        if(laser_vec.x > 0 && laser_vec.x < this->length && std::abs(laser_vec.y) < this->width / 2){
+        if(laser_vec.x > shift && laser_vec.x < this->length + shift && std::abs(laser_vec.y) < this->width / 2){
             this->obstacle_detected = true;
             return;
         }
@@ -136,14 +138,17 @@ void ObstacleAvoidance::process()
     geometry_msgs::msg::Twist twistMsg;
 
     check_save_zone();
+    std::cout << "Obstacle Detection: " << this->obstacle_detected << std::endl;
 
     auto f_att = this->pf->get_f_att(this->robotPos);
     auto f_reps = this->pf->get_f_rep(this->robotPos, this->robotYaw, this->laserPoints);
     auto f_tot = this->pf->get_total_force(f_reps, f_att);
 
-    this->publish_marker(f_att, 0.0, 1.0, 0.0, "potential", 0);
-    this->publish_marker(f_tot, 0.0, 0.0, 1.0, "potential", 1);
+    this->publish_marker(f_att, 0.0, 1.0, 0.0, "potential", 0, false);
+    this->publish_marker(f_tot, 0.0, 0.0, 1.0, "potential", 1, true);
     this->publish_markers(f_reps, 1.0, 0.0, 0.0, "potential");
+
+    std::cout << "(" << robotPos.x << "|" << robotPos.y << ")" << std::endl;
 
     double distanceToGoal = (goalPos - robotPos).norm();
     if (distanceToGoal > 0.2 && !this->obstacle_detected)
@@ -167,17 +172,41 @@ void ObstacleAvoidance::process()
         twistMsg.angular.z = 0.0;
     }
 
+    // std::cout 
+    //     << "(" 
+    //     << twistMsg.linear.x 
+    //     << "|" 
+    //     << twistMsg.linear.y 
+    //     << "|" 
+    //     << twistMsg.linear.z 
+    //     << ") ; " "(" 
+    //     << twistMsg.linear.x 
+    //     << "|" 
+    //     << twistMsg.linear.y 
+    //     << "|" 
+    //     << twistMsg.linear.z 
+    //     << ") ; ("
+    //     << twistMsg.angular.z
+    //     << ")"
+    //     << std::endl;
+
     pubCmdVel->publish(twistMsg);
 }
 
-void ObstacleAvoidance::publish_marker(Vec2f f_att, double r, double g, double b, std::string ns, int id){
+void ObstacleAvoidance::publish_marker(Vec2f f_att, double r, double g, double b, std::string ns, int id, bool is_tot){
     auto marker = this->create_marker(this->robotPos, f_att, r, g, b, ns, id);
 
-    this->f_att_publisher->publish(marker);
+    if(is_tot){
+        this->f_tot_publisher->publish(marker);
+    }else{
+        this->f_att_publisher->publish(marker);
+    }
 }
 
 void ObstacleAvoidance::publish_markers(std::vector<std::tuple<int, Vec2f>> f_rep, double r, double g, double b, std::string ns){
     visualization_msgs::msg::MarkerArray markers;
+
+    std::cout << "PUBLISH MARKER" << std::endl;
 
     for(size_t i = 0; i < f_rep.size(); ++i){
         markers.markers.push_back(this->create_marker(this->laserPoints[std::get<0>(f_rep[i])], std::get<1>(f_rep[i]), r, g, b, ns, i + 2));
@@ -210,7 +239,7 @@ visualization_msgs::msg::Marker ObstacleAvoidance::create_marker(Vec2f origin, V
     marker.points.push_back(from);
     marker.points.push_back(to);
 
-    marker.scale.x = 0.1;  // shaft diameter
+    marker.scale.x = 0.05;  // shaft diameter
     marker.scale.y = 0.2;  // head diameter
     marker.scale.z = 0.2;  // head length
 
