@@ -153,7 +153,6 @@ void ObstacleAvoidance::process()
     double distanceToGoal = (goalPos - robotPos).norm();
     if (distanceToGoal > 0.2 && !this->obstacle_detected)
     {
-        //double deltaYaw = (goalPos - robotPos).angle() - robotYaw;
         double deltaYaw = f_tot.angle() - robotYaw;
         
         if (deltaYaw > std::numbers::pi)
@@ -171,24 +170,6 @@ void ObstacleAvoidance::process()
         twistMsg.linear.x = 0.0;
         twistMsg.angular.z = 0.0;
     }
-
-    // std::cout 
-    //     << "(" 
-    //     << twistMsg.linear.x 
-    //     << "|" 
-    //     << twistMsg.linear.y 
-    //     << "|" 
-    //     << twistMsg.linear.z 
-    //     << ") ; " "(" 
-    //     << twistMsg.linear.x 
-    //     << "|" 
-    //     << twistMsg.linear.y 
-    //     << "|" 
-    //     << twistMsg.linear.z 
-    //     << ") ; ("
-    //     << twistMsg.angular.z
-    //     << ")"
-    //     << std::endl;
 
     pubCmdVel->publish(twistMsg);
 }
