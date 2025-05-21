@@ -1,4 +1,4 @@
-#include <ball_tracker/ball_tracker.h>
+#include "ball_tracker.h"
 #include <tf2/utils.h>
 #include <builtin_interfaces/msg/time.hpp>
 #include <std_msgs/msg/color_rgba.hpp>
@@ -82,9 +82,8 @@ void BallTracker::pointsCallback(const sensor_msgs::msg::PointCloud2 &pointCloud
     if (!floorPlane) {
         RCLCPP_INFO(get_logger(), "cannot find the floor");
     }
-    RCLCPP_INFO(get_logger(), "found the floor");
 
-    this->findAndRemoveWalls(pclPointCloud, normals);
+    findAndRemoveWalls(pclPointCloud, normals);
 
     pubCloudObjects->publish(pclPointCloudToPointCloud2(*pclPointCloud));
 
@@ -104,8 +103,6 @@ void BallTracker::pointsCallback(const sensor_msgs::msg::PointCloud2 &pointCloud
 }
 
 std::optional<pcl::ModelCoefficients> BallTracker::findAndRemoveFloor(PointCloud::Ptr cloud, NormalCloud::Ptr normals) {
-    
-    RCLCPP_INFO(this->get_logger(), "%s", "starting from floor");
     // 1. find a horziontal plane
     // 2. publish the extracted points
     // 3. remove all points of that plane from the point cloud
@@ -115,98 +112,49 @@ std::optional<pcl::ModelCoefficients> BallTracker::findAndRemoveFloor(PointCloud
     // create segmenter with model type pcl::SACMODEL_NORMAL_PARALLEL_PLANE and set the cloud and its normals as inputs
     // TODO ...
 
-    pcl::PointIndices::Ptr inliers = std::make_shared<pcl::PointIndices>();
-
-    pcl::SACSegmentationFromNormals<pcl::PointXYZRGB, pcl::Normal> seg;
-    seg.setOptimizeCoefficients(true);
-    seg.setModelType(pcl::SACMODEL_NORMAL_PARALLEL_PLANE);
-    seg.setMethodType(pcl::SAC_RANSAC);
-    seg.setDistanceThreshold(get_parameter("floor_distanceThreshold").as_double());
-    seg.setInputCloud(cloud);
-    seg.setInputNormals(normals);
-    seg.setMaxIterations(get_parameter("floor_maxIterations").as_int());
-
     // find segmentation
-    pcl::ModelCoefficients::Ptr planeModel = std::make_shared<pcl::ModelCoefficients>();
+    pcl::ModelCoefficients planeModel;
     // TODO ...
-    seg.segment(*inliers, *planeModel);
 
     // check if the plane has enough of points
-    if (inliers->indices.size() <= get_parameter("floor_minPoints").as_int()) {
+    if (true /* TODO */) {
         return std::nullopt;
     }
 
     // extract all inliers and put them into planePoints
-    PointCloud::Ptr planePoints(new PointCloud);
-    planePoints->header = cloud->header;
-
-    pcl::ExtractIndices<pcl::PointXYZRGB> p_extractor;
-    p_extractor.setInputCloud(cloud);
-    p_extractor.setIndices(inliers);
-    p_extractor.setNegative(false);
-    
-    p_extractor.filter(*planePoints);
+    PointCloud planePoints;
+    // TODO ...
 
     // publish the plane
-    pubCloudFloor->publish(pclPointCloudToPointCloud2(*planePoints));
+    pubCloudFloor->publish(pclPointCloudToPointCloud2(planePoints));
 
-    p_extractor.setNegative(true);
+    // remove the points from the point cloud
+    // TODO ...
 
-    p_extractor.filter(*cloud);
+    // remove the normals from the normal cloud
+    // TODO ...
 
-    pcl::ExtractIndices<pcl::Normal> n_extractor;
-    n_extractor.setInputCloud(normals);
-    n_extractor.setIndices(inliers);
-    n_extractor.setNegative(true);
-    n_extractor.filter(*normals);
-
-    return *planeModel;
+    return planeModel;
 }
 
 void BallTracker::findAndRemoveWalls(PointCloud::Ptr cloud, NormalCloud::Ptr normals) {
     // create segmenter with model type pcl::SACMODEL_NORMAL_PLANE and set the cloud and its normals as inputs
-
-    pcl::ModelCoefficients::Ptr coeff = std::make_shared<pcl::ModelCoefficients>();
-    pcl::PointIndices::Ptr inliers = std::make_shared<pcl::PointIndices>();
-    
-    pcl::SACSegmentationFromNormals<pcl::PointXYZRGB, pcl::Normal> seg;
-    seg.setOptimizeCoefficients(true);
-    seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
-    seg.setMethodType(pcl::SAC_RANSAC);
-    seg.setDistanceThreshold(get_parameter("wall_distanceThreshold").as_double());
-    seg.setInputCloud(cloud);
-    seg.setInputNormals(normals);
-    seg.setMaxIterations(get_parameter("wall_maxIterations").as_int());
+    // TODO ...
 
     for (int i = 0; i < get_parameter("walls").as_int(); i++) {
         // find segmentation
         // TODO ...
-        seg.segment(*inliers, *coeff);
 
         // check if the plane has enough of points
-        if (inliers->indices.size() <= get_parameter("wall_minPoints").as_int()) {
+        if (true /* TODO */) {
             break;
         }
 
-        PointCloud::Ptr extracted_plane(new PointCloud);
-        extracted_plane->header = cloud->header;
+        // remove the points from the point cloud
+        // TODO ...
 
-        pcl::ExtractIndices<pcl::PointXYZRGB> p_extractor;
-        p_extractor.setInputCloud(cloud);
-        p_extractor.setIndices(inliers);
-        p_extractor.setNegative(false);
-        
-        p_extractor.filter(*extracted_plane);
-
-        p_extractor.setNegative(true);
-
-        p_extractor.filter(*cloud);
-        
-        pcl::ExtractIndices<pcl::Normal> n_extractor;
-        n_extractor.setInputCloud(normals);
-        n_extractor.setIndices(inliers);
-        n_extractor.setNegative(true);
-        n_extractor.filter(*normals);
+        // remove the normals from the normal cloud
+        // TODO ...
     }
 }
 

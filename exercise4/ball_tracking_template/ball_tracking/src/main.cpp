@@ -1,6 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <memory>
-#include <ball_tracker/ball_tracker.h>
+#include "ball_tracker.h"
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
