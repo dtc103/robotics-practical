@@ -62,6 +62,7 @@ class BallTracker: public rclcpp::Node {
 
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subPoints;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubCloudFloor;
+        rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubCloudWalls;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubCloudObjects;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubCloudBalls;
         rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubBalls;

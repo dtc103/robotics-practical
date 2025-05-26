@@ -47,6 +47,7 @@ BallTracker::BallTracker(): Node("ball_tracker") {
     declare_parameter("sphere_maxDistanceToFloor", 0.05); // min no of point per sphere
 
     pubCloudFloor = create_publisher<sensor_msgs::msg::PointCloud2>("/points_floor", 1);
+    pubCloudWalls = create_publisher<sensor_msgs::msg::PointCloud2>("/points_walls", 1);
     pubCloudObjects = create_publisher<sensor_msgs::msg::PointCloud2>("/points_objects", 1);
     pubCloudBalls = create_publisher<sensor_msgs::msg::PointCloud2>("/points_spheres", 1);
     pubBalls = create_publisher<visualization_msgs::msg::MarkerArray>("/balls", 1);
@@ -93,10 +94,34 @@ void BallTracker::pointsCallback(const sensor_msgs::msg::PointCloud2 &pointCloud
 
     visualization_msgs::msg::MarkerArray ballsWithDeleteAllMarker;
     visualization_msgs::msg::Marker deleteAllMarker;
+    deleteAllMarker.header.frame_id = "base_footprint";
+    deleteAllMarker.header.stamp = this->now();
     deleteAllMarker.ns = "delete_all";
     deleteAllMarker.action = visualization_msgs::msg::Marker::DELETEALL;
     ballsWithDeleteAllMarker.markers.push_back(deleteAllMarker);
     ballsWithDeleteAllMarker.markers.insert(ballsWithDeleteAllMarker.markers.end(), balls.markers.begin(), balls.markers.end());
+    
+    RCLCPP_INFO(get_logger(),
+      "DELETEALL Marker: frame_id=%s, ns=%s, id=%d, action=%d",
+      deleteAllMarker.header.frame_id.c_str(),
+      deleteAllMarker.ns.c_str(),
+      deleteAllMarker.id,
+      deleteAllMarker.action);
+      
+
+    for (const auto &m : ballsWithDeleteAllMarker.markers) {
+        RCLCPP_INFO(get_logger(),
+          "Marker to publish: ns=%s, id=%d, action=%d, frame_id=%s, stamp=%u.%u",
+          m.ns.c_str(), m.id, m.action,
+          m.header.frame_id.c_str(),
+          m.header.stamp.sec, m.header.stamp.nanosec);
+      }
+
+    
+    RCLCPP_INFO(get_logger(),
+      "Publishing MarkerArray with %zu markers",
+      ballsWithDeleteAllMarker.markers.size());
+    
     pubBalls->publish(ballsWithDeleteAllMarker);
 
     // process the found balls
@@ -201,6 +226,9 @@ void BallTracker::findAndRemoveWalls(PointCloud::Ptr cloud, NormalCloud::Ptr nor
         p_extractor.setNegative(true);
 
         p_extractor.filter(*cloud);
+
+        // publish the wall
+        pubCloudWalls->publish(pclPointCloudToPointCloud2(*extracted_plane));
         
         pcl::ExtractIndices<pcl::Normal> n_extractor;
         n_extractor.setInputCloud(normals);
@@ -210,47 +238,133 @@ void BallTracker::findAndRemoveWalls(PointCloud::Ptr cloud, NormalCloud::Ptr nor
     }
 }
 
-visualization_msgs::msg::MarkerArray BallTracker::findAndExtractBalls(PointCloud::Ptr cloud, NormalCloud::Ptr normals, const std::optional<pcl::ModelCoefficients> &groundPlane) {
-    // create segmenter with model type pcl::SACMODEL_NORMAL_SPHERE and set the cloud and its normals as inputs
-    // TODO ...
-
+visualization_msgs::msg::MarkerArray BallTracker::findAndExtractBalls(
+    PointCloud::Ptr cloud,
+    NormalCloud::Ptr normals,
+    const std::optional<pcl::ModelCoefficients> &groundPlane)
+{
     visualization_msgs::msg::MarkerArray ballMarkers;
-    PointCloud cloudBalls;
-    cloudBalls.header = cloud->header;
+    PointCloud::Ptr cloudBalls(new PointCloud);
+    cloudBalls->header = cloud->header;
 
-    for (int i = 0; i < get_parameter("spheres").as_int(); i++) {
-        // find segmentation
-        pcl::PointIndices::Ptr inliers = std::make_shared<pcl::PointIndices>();
+    pcl::SACSegmentationFromNormals<PointT, pcl::Normal> segSphere;
+    segSphere.setOptimizeCoefficients(true);
+    segSphere.setModelType(pcl::SACMODEL_NORMAL_SPHERE);
+    segSphere.setMethodType(get_parameter("sphere_methodType").as_int());
+    segSphere.setNormalDistanceWeight(get_parameter("sphere_normalDistanceWeight").as_double());
+    segSphere.setRadiusLimits(
+        get_parameter("sphere_radiusMin").as_double(),
+        get_parameter("sphere_radiusMax").as_double());
+    segSphere.setDistanceThreshold(get_parameter("sphere_distanceThreshold").as_double());
+    segSphere.setMaxIterations(get_parameter("sphere_maxIterations").as_int());
+    segSphere.setInputCloud(cloud);
+    segSphere.setInputNormals(normals);
+
+    int maxSpheres = get_parameter("spheres").as_int();
+    int id_counter = 0;
+    for (int i = 0; i < maxSpheres; ++i) {
+        // 1) Segmentiere eine Kugel:
+        pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
         pcl::ModelCoefficients sphereModel;
-        // TODO ...
+        segSphere.segment(*inliers, sphereModel);
 
-        // check if the sphere has enough of points
-        if (true /* TODO */) {
+        if (inliers->indices.empty()) {
+            RCLCPP_INFO(get_logger(),
+            "Sphere %d: keine Inlier gefunden, breche Schleife ab.", i);
             break;
         }
 
-        // bonus: use plane model to limit ball positions to the ground
-        if (!groundPlane /* || TODO */) {
-            // analyze the ball
-            ballMarkers.markers.push_back(createSphereMarker(*cloud, *inliers, sphereModel));
-            ballMarkers.markers.back().id = i;
+        RCLCPP_INFO(get_logger(),
+                "Sphere-segmentation %d: inliers=%zu, center=(%.3f,%.3f,%.3f), radius=%.3f",
+                i,
+                inliers->indices.size(),
+                sphereModel.values[0],
+                sphereModel.values[1],
+                sphereModel.values[2],
+                sphereModel.values[3]);
+
+
+
+        
+        // 2) Abbruch, wenn zu wenige Punkte:
+        if ((int)inliers->indices.size() < get_parameter("sphere_minPoints").as_int()) {
+            break;
         }
 
-        // extract all inliers
+        // (Optional: Einschränkung bzgl. Bodenebene)
+        if (groundPlane) {
+            // Ebene: a*x + b*y + c*z + d = 0
+            const auto &coeffs = groundPlane.value().values;
+            double a = coeffs[0], b = coeffs[1], c = coeffs[2], d = coeffs[3];
+        
+            double x0 = sphereModel.values[0];
+            double y0 = sphereModel.values[1];
+            double z0 = sphereModel.values[2];
+        
+            // Abstand Punkt–Ebene: |a*x0 + b*y0 + c*z0 + d| / sqrt(a^2+b^2+c^2)
+            double dist = std::abs(a*x0 + b*y0 + c*z0 + d)
+                          / std::sqrt(a*a + b*b + c*c);
+        
+            double maxDist = get_parameter("sphere_maxDistanceToFloor").as_double();
+            RCLCPP_INFO(get_logger(),
+                  "Ball %d: Höhe über Boden = %.3f m (max=%.3f)",
+                  i, dist, maxDist);
+            if (dist > maxDist) {
+                RCLCPP_WARN(get_logger(),
+                    "Ball %d verworfen: zu weit über dem Boden.", i);
+                continue;
+            }
+        }
+
+        RCLCPP_INFO(get_logger(),
+                "Verarbeite Ball %d: center=(%.3f,%.3f,%.3f), radius=%.3f",
+                i,
+                sphereModel.values[0],
+                sphereModel.values[1],
+                sphereModel.values[2],
+                sphereModel.values[3]);
+
+        // 3) Marker erzeugen _vor_ dem Entfernen:
+        auto marker = createSphereMarker(*cloud, *inliers, sphereModel);
+        marker.id = id_counter++;
+        RCLCPP_INFO(get_logger(),
+            "Created marker %d at (%.3f, %.3f, %.3f)", 
+            marker.id,
+            marker.pose.position.x,
+            marker.pose.position.y,
+            marker.pose.position.z);
+        ballMarkers.markers.push_back(marker);
+
+        // 4) Extrahiere die Kugelpunkte:
         PointCloud spherePoints;
-        // TODO ...
+        spherePoints.header = cloud->header;
+        pcl::ExtractIndices<PointT> p_extractor;
+        p_extractor.setInputCloud(cloud);
+        p_extractor.setIndices(inliers);
+        p_extractor.setNegative(false);
+        p_extractor.filter(spherePoints);
 
-        cloudBalls += spherePoints;
+        // Füge sie zum Gesamt-Cloud der Bälle hinzu:
+        *cloudBalls += spherePoints;
 
-        // remove the points from the point cloud
-        // TODO ...
+        // 5) Entferne die Kugelpunkte aus dem Original-Cloud:
+        p_extractor.setNegative(true);
+        p_extractor.filter(*cloud);
 
-        // remove the normals from the normal cloud
-        // TODO ...
+        // 6) Entferne die zugehörigen Normals:
+        pcl::ExtractIndices<pcl::Normal> n_extractor;
+        n_extractor.setInputCloud(normals);
+        n_extractor.setIndices(inliers);
+        n_extractor.setNegative(true);
+        n_extractor.filter(*normals);
     }
 
-    // publish the spheres
-    pubCloudBalls->publish(pclPointCloudToPointCloud2(cloudBalls));
+    // 7) Publiziere alle gefundenen Kugeln als einen neuen PointCloud2:
+    pubCloudBalls->publish(pclPointCloudToPointCloud2(*cloudBalls));
+
+    RCLCPP_INFO(get_logger(),
+            "Total markers to publish: %zu", ballMarkers.markers.size());
+
 
     return ballMarkers;
 }
@@ -261,53 +375,75 @@ visualization_msgs::msg::Marker BallTracker::createSphereMarker(const PointCloud
     sphereMarker.type = visualization_msgs::msg::Marker::SPHERE;
     sphereMarker.action = visualization_msgs::msg::Marker::ADD;
     sphereMarker.lifetime = rclcpp::Duration(5s);
+    sphereMarker.ns = "balls";
+    
+    double x0 = sphereModel.values[0];
+    double y0 = sphereModel.values[1];
+    double z0 = sphereModel.values[2];
+    double r  = sphereModel.values[3];
 
     // TODO: set the position and scale of the sphere marker
-    sphereMarker.pose.position.x = 0;
-    sphereMarker.pose.position.y = 0;
-    sphereMarker.pose.position.z = 0;
-    sphereMarker.scale.x = 0;
-    sphereMarker.scale.y = 0;
-    sphereMarker.scale.z = 0;
+    sphereMarker.pose.position.x = x0;
+    sphereMarker.pose.position.y = y0;
+    sphereMarker.pose.position.z = z0;
+    sphereMarker.pose.orientation.w = 1.0;  
+
+    // Durchmesser = 2 * Radius
+    sphereMarker.scale.x = 2.0 * r;
+    sphereMarker.scale.y = 2.0 * r;
+    sphereMarker.scale.z = 2.0 * r;
+    
+
 
     // iterate over all inliers in the cloud and calculate the mean color
-    for (pcl::index_t idx: inliers.indices) {
-        const PointT &p = cloud.points[idx];
-        // TODO ...
+    double sum_r = 0.0, sum_g = 0.0, sum_b = 0.0;
+    for (auto idx : inliers.indices) {
+        const auto &p = cloud.points[idx];
+        sum_r += p.r;
+        sum_g += p.g;
+        sum_b += p.b;
     }
 
     // TODO: set the color of the sphere marker
-    sphereMarker.color.r = 0;
-    sphereMarker.color.g = 0;
-    sphereMarker.color.b = 0;
-    sphereMarker.color.a = 1;
+    double n = static_cast<double>(inliers.indices.size());
+    sphereMarker.color.r = (sum_r / n) / 255.0;
+    sphereMarker.color.g = (sum_g / n) / 255.0;
+    sphereMarker.color.b = (sum_b / n) / 255.0;
+    sphereMarker.color.a = 1.0;
+
 
     return sphereMarker;
 }
 
+
 void BallTracker::processBalls(const visualization_msgs::msg::MarkerArray &balls) {
     goal.reset();
 
-    for (const visualization_msgs::msg::Marker &ball: balls.markers) {
-        bool isBlue = false /* TODO */;
-
-        if (isBlue) {
-            goal.emplace();
-
-            // TODO: set the goal pose
-            //goal->header = ...;
-            //goal->pose.position.x = ...;
-            //goal->pose.position.y = ...;
-
-            return;
+    for (const auto &ball : balls.markers) {
+        bool isOrange = (ball.color.r > ball.color.b && ball.color.g > ball.color.b);
+        if (!isOrange) {
+            continue;
         }
+
+        goal.emplace();
+        goal->header = ball.header;      // Timestamp und Frame-ID übernehmen
+        goal->pose   = ball.pose;        // Position und Orientierung übernehmen
+
+        return;  
     }
 }
 
+
+
+
 void BallTracker::tick() {
     // publish the goal if the ball was found
-    // TODO ...
+    if (goal) {
+        pubGoal->publish(*goal);
+    }
 }
+
+
 
 void BallTracker::removeNaNPoints(PointCloud &cloud) {
     auto isAnyCoordinateNaN = [](PointT p) { return std::isnan(p.x) || std::isnan(p.y) || std::isnan(p.z); };
