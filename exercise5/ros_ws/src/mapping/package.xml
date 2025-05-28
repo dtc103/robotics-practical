@@ -3,11 +3,20 @@
 <package format="3">
   <name>mapping</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="jan_kerner@gmx.de">dtc103</maintainer>
+  <description>The mapping package</description>
+  <maintainer email="todo@student.uni-tuebingen.de">TODO</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>message_filters</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
