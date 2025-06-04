@@ -16,10 +16,14 @@ Mapping::Mapping(): Node("mapping") {
     this->declare_parameter<int>("grid_height", 100);
     this->declare_parameter<int>("grid_width", 100);
     this->declare_parameter<double>("grid_resolution", 0.1);
+    this->declare_parameter<double>("p_occ", 0.1);
+    this->declare_parameter<double>("p_free", 0.1);
 
     this->grid_height = this->get_parameter("grid_height").as_int();
     this->grid_width= this->get_parameter("grid_width").as_int();
     this->grid_resolution = this->get_parameter("grid_resolution").as_double();
+    this->p_occ = this->get_parameter("p_occ").as_double();
+    this->p_free = this->get_parameter("p_free").as_double();
     
 
     this->grid.header.frame_id = "odom";
@@ -55,6 +59,12 @@ Mapping::Mapping(): Node("mapping") {
 
 }
 
+Vec2i Mapping::odom_to_grid(Vec2f world) {
+    double gx = (world.x - this->grid.info.origin.position.x) / this->grid_resolution;
+    double gy = (world.y - this->grid.info.origin.position.y) / this->grid_resolution;
+    return Vec2i(gx, gy);
+}
+
 int Mapping::get_grid_index(Vec2f robotPos){
     double rp_grid_x = robotPos.x + (this->grid_width * this->grid_resolution) / 2;
     double rp_grid_y = robotPos.y + (this->grid_height * this->grid_resolution) / 2;
@@ -62,6 +72,46 @@ int Mapping::get_grid_index(Vec2f robotPos){
     int idx = static_cast<int>(rp_grid_x / grid.info.resolution) + static_cast<int>(rp_grid_y / grid.info.resolution) * grid.info.width;
 
     return idx;
+}
+
+Vec2f Mapping::grid_coords(int idx) {
+    int w = this->grid.info.width;
+    int h = this->grid.info.height;
+    int max_cells = w * h;
+
+    if (idx < 0 || idx >= max_cells) {
+        return Vec2f(-1, -1);  // invalid index
+    }
+
+    int x = idx % w;
+    int y = idx / w;
+    return Vec2f(x, y);
+}
+
+Vec2f Mapping::gridIndexToWorld(int idx) {
+    int w = this->grid.info.width;
+    int h = this->grid.info.height;
+    int max_cells = w * h;
+
+    if (idx < 0 || idx >= max_cells) {
+        return Vec2f(-1, -1);  // invalid index
+    }
+
+    // recover integer cell‐coords
+    int i = idx % w;
+    int j = idx / w;
+
+    // bottom‐left corner of the grid in odom frame:
+    double ox = this->grid.info.origin.position.x;
+    double oy = this->grid.info.origin.position.y;
+    double r  = this->grid.info.resolution;
+
+    // x_world = origin_x + (i + 0.5)*resolution
+    // y_world = origin_y + (j + 0.5)*resolution
+    double x_world = ox + (i + 0.5) * r;
+    double y_world = oy + (j + 0.5) * r;
+
+    return Vec2f(x_world, y_world);
 }
 
 void Mapping::odomCallback(const nav_msgs::msg::Odometry &odom)
@@ -76,6 +126,30 @@ void Mapping::odomCallback(const nav_msgs::msg::Odometry &odom)
     
     this->grid.data[idx] = 0;
 }
+
+double Mapping::possibility(double prior, int grid_idx, Vec2f robotPos, double laserRange, double maxRange){
+    double likelihood2_odds = 1.0; 
+    prior = prior / 100;
+    double prior_odd = prior / (1 - prior);
+
+    std::cout << gridIndexToWorld(grid_idx).x << " " << gridIndexToWorld(grid_idx).y << std::endl;
+
+    double likelihood1;
+    if(laserRange > maxRange){
+        likelihood1 = 0.5;
+    }else if(std::abs(laserRange - (robotPos - gridIndexToWorld(grid_idx)).norm())) {
+        likelihood1 = this->p_occ;
+    }else{
+        laserRange >= this->p_free;
+    }
+
+    double likelihood1_odds = likelihood1 / (1 - likelihood1);
+
+    double posterior_odds = likelihood1_odds * likelihood2_odds * prior_odd;
+
+    return (posterior_odds / (1 + posterior_odds)) * 100;
+}
+
 
 void Mapping::laserCallback(const sensor_msgs::msg::LaserScan &scan) {
     std::lock_guard<std::mutex> guard(mutex);
@@ -96,25 +170,38 @@ void Mapping::laserCallback(const sensor_msgs::msg::LaserScan &scan) {
             continue;
         }
 
-        if (scan.ranges[i] < scan.range_min || scan.range_max < scan.ranges[i]) {
+        if (scan.ranges[i] < scan.range_min) {
             continue;
         }
-        
-        // TODO: handle max range values
 
+
+        bool is_hit = !std::isnan(scan.ranges[i]);
         Vec2f pLaser = scan.ranges[i] * Vec2f::fromAngle(angle);
 
+        if(scan.range_max < scan.ranges[i] || std::isnan(scan.ranges[i])){
+            pLaser = scan.range_max * Vec2f::fromAngle(angle);
+        }
+        
         tf2::Transform interpolatedTransform = slerpTransforms(startTransform, endTransform, i / (scan.ranges.size() - 1.0));
         Vec2f viewpointOdom = interpolatedTransform(Vec2f(0, 0).toTf2Vector3());
         Vec2f pOdom = interpolatedTransform(pLaser.toTf2Vector3());
 
-        if(std::isnan(pOdom.x) || std::isnan(pOdom.y)){
-            continue;
+        auto grid_coords_viewpointOdom = grid_coords(get_grid_index(viewpointOdom));
+        auto grid_coords_pOdom = grid_coords(get_grid_index(pOdom));
+
+        GridTraversal gt(grid_coords_viewpointOdom, grid_coords_pOdom);
+        while(gt.next()){
+            auto grid_point = gt.get();
+            int idx = grid_point.y * grid.info.width + grid_point.x;
+            auto grid_point_coords = gridIndexToWorld(idx);
+
+            this->grid.data[(size_t)idx] = possibility(this->grid.data[(size_t)idx], idx, this->robotPos, scan.ranges[i], scan.range_max);
         }
-        
-        int idx = this->get_grid_index(pOdom);
     
-        this->grid.data[idx] = 100;
+        int idx = this->get_grid_index(pOdom);
+        if(is_hit){
+            this->grid.data[idx] = possibility(this->grid.data[(size_t)idx], idx, this->robotPos, scan.ranges[i], scan.range_max);
+        }
     }
 
     // TODO: traverse grid and update occupancy information

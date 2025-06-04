@@ -10,6 +10,8 @@ def generate_launch_description():
             DeclareLaunchArgument("grid_width", default_value="100", description=""),
             DeclareLaunchArgument("grid_height", default_value="100", description=""),
             DeclareLaunchArgument("grid_resolution", default_value="0.1", description=""),
+            DeclareLaunchArgument("p_occ", default_value="0.8", description=""),
+            DeclareLaunchArgument("p_free", default_value="0.49", description=""),
             Node(
                 package="mapping",
                 executable="mapping",
@@ -18,6 +20,8 @@ def generate_launch_description():
                     {"grid_width": LaunchConfiguration("grid_width")},
                     {"grid_height": LaunchConfiguration("grid_height")},
                     {"grid_resolution": LaunchConfiguration("grid_resolution")},
+                    {"p_occ": LaunchConfiguration("p_occ")},
+                    {"p_free": LaunchConfiguration("p_free")},
                 ],
                 output="screen"
             )
