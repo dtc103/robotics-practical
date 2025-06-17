@@ -24,11 +24,12 @@ class Mapping: public rclcpp::Node {
     private:
         void laserCallback(const sensor_msgs::msg::LaserScan &scan);
         void odomCallback(const nav_msgs::msg::Odometry &odom);
-        int get_grid_index(Vec2f robotPos);
+        int get_grid_index(Vec2f &p_world);
         Vec2i odom_to_grid(Vec2f world);
         Vec2f grid_coords(int idx);
-        double possibility(double prior, int grid_idx, Vec2f robotPos, double laserRange, double maxRange);
         Vec2f gridIndexToWorld(int idx);
+        void set_cell(int idx, double l_update);
+        double inverseSensorModel(double dist, double z, double z_max);
 
         tf2::Transform slerpTransforms(const tf2::Transform &a, const tf2::Transform &b, double ratio);
 
@@ -45,6 +46,12 @@ class Mapping: public rclcpp::Node {
         bool grid_init = false;
         double p_occ;
         double p_free;
+        std::vector<double> cell_log_odds;
+        double l0;
+        double l_occ;
+        double l_free;
+        double l_min;
+        double l_max;
 
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subOdom;
 

@@ -8,6 +8,7 @@
 #include <builtin_interfaces/msg/time.hpp>
 #include <chrono>
 #include "gridtraversal.h"
+#include <algorithm>
 
 using namespace std::chrono_literals;
 
@@ -16,8 +17,8 @@ Mapping::Mapping(): Node("mapping") {
     this->declare_parameter<int>("grid_height", 100);
     this->declare_parameter<int>("grid_width", 100);
     this->declare_parameter<double>("grid_resolution", 0.1);
-    this->declare_parameter<double>("p_occ", 0.1);
-    this->declare_parameter<double>("p_free", 0.1);
+    this->declare_parameter<double>("p_occ", 0.8);
+    this->declare_parameter<double>("p_free", 0.45);
 
     this->grid_height = this->get_parameter("grid_height").as_int();
     this->grid_width= this->get_parameter("grid_width").as_int();
@@ -34,7 +35,15 @@ Mapping::Mapping(): Node("mapping") {
     this->grid.info.origin.position.x = -(grid_resolution * (double)grid_width) / 2;
     this->grid.info.origin.position.y = -(grid_resolution * (double)grid_height) / 2;
     this->grid.info.origin.position.z = 0.0;
+    this->grid.info.origin.orientation.w = 1.0;
 
+    this->l0 = 0.0;
+    this->l_occ = std::log(p_occ / (1.0 - p_occ));
+    this->l_free = std::log(p_free / (1.0 - p_free));
+    this->l_min = std::log(0.01 / 0.99);
+    this->l_max = std::log(0.99/0.01);
+
+    this->cell_log_odds.assign(grid_width * grid_height, l0);
     this->grid.data.assign(grid.info.height * grid.info.width, 50);
 
     std::cout << this->grid.info.origin.position.x << " " << this->grid.info.origin.position.y << " " << this->grid.info.origin.position.z << std::endl;
@@ -65,26 +74,43 @@ Vec2i Mapping::odom_to_grid(Vec2f world) {
     return Vec2i(gx, gy);
 }
 
-int Mapping::get_grid_index(Vec2f robotPos){
-    double rp_grid_x = robotPos.x + (this->grid_width * this->grid_resolution) / 2;
-    double rp_grid_y = robotPos.y + (this->grid_height * this->grid_resolution) / 2;
+void Mapping::set_cell(int idx, double l_update){
+    if (idx < 0) return;                       // out of map
 
-    int idx = static_cast<int>(rp_grid_x / grid.info.resolution) + static_cast<int>(rp_grid_y / grid.info.resolution) * grid.info.width;
+    cell_log_odds[idx] = std::clamp(cell_log_odds[idx] + l_update, l_min, l_max);
 
-    return idx;
+    // convert once to 0…100 / -1 for publishing
+    double p = 1.0 - 1.0 / (1.0 + std::exp(cell_log_odds[idx]));
+    grid.data[idx] = static_cast<int8_t>( std::round(100.0 * p));
+}
+
+double Mapping::inverseSensorModel(double dist, double z, double z_max){
+    if (z > z_max)                 // no return (max-range reading)
+        return 0.0;
+
+    if (std::fabs(z - dist) < grid_resolution * 0.5)   // hit cell
+        return l_occ;
+
+    if (dist < z)                                     // ray before hit
+        return l_free;
+
+    return 0.0;                                       // behind hit
+}
+
+
+int Mapping::get_grid_index(Vec2f &p_world){
+    Vec2i g = odom_to_grid(p_world);
+
+    if(g.x < 0 || g.x >= this->grid_width || g.y < 0 || g.y >= this->grid_height){
+        return -1;
+    }
+
+    return g.y * this->grid_width + g.x;
 }
 
 Vec2f Mapping::grid_coords(int idx) {
-    int w = this->grid.info.width;
-    int h = this->grid.info.height;
-    int max_cells = w * h;
-
-    if (idx < 0 || idx >= max_cells) {
-        return Vec2f(-1, -1);  // invalid index
-    }
-
-    int x = idx % w;
-    int y = idx / w;
+    int x = idx % this->grid_width;
+    int y = idx / this->grid_width;
     return Vec2f(x, y);
 }
 
@@ -106,8 +132,6 @@ Vec2f Mapping::gridIndexToWorld(int idx) {
     double oy = this->grid.info.origin.position.y;
     double r  = this->grid.info.resolution;
 
-    // x_world = origin_x + (i + 0.5)*resolution
-    // y_world = origin_y + (j + 0.5)*resolution
     double x_world = ox + (i + 0.5) * r;
     double y_world = oy + (j + 0.5) * r;
 
@@ -124,30 +148,9 @@ void Mapping::odomCallback(const nav_msgs::msg::Odometry &odom)
     
     int idx = this->get_grid_index(robotPos);
     
-    this->grid.data[idx] = 0;
-}
-
-double Mapping::possibility(double prior, int grid_idx, Vec2f robotPos, double laserRange, double maxRange){
-    double likelihood2_odds = 1.0; 
-    prior = prior / 100;
-    double prior_odd = prior / (1 - prior);
-
-    std::cout << gridIndexToWorld(grid_idx).x << " " << gridIndexToWorld(grid_idx).y << std::endl;
-
-    double likelihood1;
-    if(laserRange > maxRange){
-        likelihood1 = 0.5;
-    }else if(std::abs(laserRange - (robotPos - gridIndexToWorld(grid_idx)).norm())) {
-        likelihood1 = this->p_occ;
-    }else{
-        laserRange >= this->p_free;
+    if(idx >= 0){
+        set_cell(idx, l_free);
     }
-
-    double likelihood1_odds = likelihood1 / (1 - likelihood1);
-
-    double posterior_odds = likelihood1_odds * likelihood2_odds * prior_odd;
-
-    return (posterior_odds / (1 + posterior_odds)) * 100;
 }
 
 
@@ -191,16 +194,18 @@ void Mapping::laserCallback(const sensor_msgs::msg::LaserScan &scan) {
 
         GridTraversal gt(grid_coords_viewpointOdom, grid_coords_pOdom);
         while(gt.next()){
-            auto grid_point = gt.get();
-            int idx = grid_point.y * grid.info.width + grid_point.x;
-            auto grid_point_coords = gridIndexToWorld(idx);
+            auto gp = gt.get();
+            int idx = gp.y * grid.info.width + gp.x;
 
-            this->grid.data[(size_t)idx] = possibility(this->grid.data[(size_t)idx], idx, this->robotPos, scan.ranges[i], scan.range_max);
+            Vec2f cw = gridIndexToWorld(idx);
+            double dist = (cw - viewpointOdom).norm();
+
+            this->set_cell(idx, inverseSensorModel(dist, scan.ranges[i], scan.range_max));
         }
     
         int idx = this->get_grid_index(pOdom);
-        if(is_hit){
-            this->grid.data[idx] = possibility(this->grid.data[(size_t)idx], idx, this->robotPos, scan.ranges[i], scan.range_max);
+        if(idx >= 0 && is_hit){
+            set_cell(idx, l_occ);
         }
     }
 

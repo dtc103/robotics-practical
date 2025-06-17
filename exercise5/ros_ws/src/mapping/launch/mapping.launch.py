@@ -11,7 +11,8 @@ def generate_launch_description():
             DeclareLaunchArgument("grid_height", default_value="100", description=""),
             DeclareLaunchArgument("grid_resolution", default_value="0.1", description=""),
             DeclareLaunchArgument("p_occ", default_value="0.8", description=""),
-            DeclareLaunchArgument("p_free", default_value="0.49", description=""),
+            DeclareLaunchArgument("p_free", default_value="0.45", description=""),
+            DeclareLaunchArgument("use_sim_time", default_value="true", description=""),
             Node(
                 package="mapping",
                 executable="mapping",
