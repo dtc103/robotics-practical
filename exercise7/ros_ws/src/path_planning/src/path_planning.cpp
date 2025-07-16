@@ -117,7 +117,7 @@ void PathPlanning::create_cost_map(){
         if(nx<0||nx>=w||ny<0||ny>=h) continue;
         int ni = ny*w + nx;
         // use 1 or 2 for step² (approx for diag: 1²+1²=2)
-        double step2 = (std::abs(o[0])+std::abs(o[1])==2) ? 2.0 : 1.0;
+        double step2 = (std::abs(o[0])+std::abs(o[1])==2) ? std::sqrt(2.0) : 1.0;
         double nd2 = d2 + step2;
         if(nd2 < dist2[ni] && nd2 <= rad2){
           dist2[ni] = nd2;
