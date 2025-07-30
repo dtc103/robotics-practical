@@ -7,15 +7,36 @@ using std::placeholders::_1;
 PathFollowing::PathFollowing(): Node("path_following") {
     this->path_sub = this->create_subscription<nav_msgs::msg::Path>("/path", 10, std::bind(&PathFollowing::process_path, this, _1));
     this->processed_path_pub = this->create_publisher<nav_msgs::msg::Path>("/processed_path", 10);
+
+    this->curr_pos = Vec2f(0.0, 0.0);
+
+    subOdom = create_subscription<nav_msgs::msg::Odometry>(
+        "/odom", 1,
+        std::bind(&PathFollowing::odomCallback, this, std::placeholders::_1));
 }
 
-void PathFollowing::process_path(const nav_msgs::msg::Path msg){
-        auto path = processPath(msg);
+void PathFollowing::process_path(const nav_msgs::msg::Path::SharedPtr msg){
+    auto path = processPath(*msg);
 
-        this->processed_path_pub->publish(path);
+    this->processed_path_pub->publish(path);
+
+    std::cout << "run nearest_projections" << std::endl;
+    if(has_init_pos && path.poses.size() > 0){
+        auto s = nearest_projection_angle(path, this->curr_pos);
+        std::cout << s.phi_c << " " << s.x_n << " " << s.segment_index << " " << s.projection.x << " " << s.projection.y << std::endl;
+        std::cout << "nearest_projections did run" << std::endl;
+    }
 }
 
-size_t PathFollowing::nearest_projection_angle(const nav_msgs::msg::Path& path, Vec2f point, double k)
+void PathFollowing::odomCallback(const nav_msgs::msg::Odometry &odom)
+{
+    this->curr_pos.x = odom.pose.pose.position.x;
+    this->curr_pos.y = odom.pose.pose.position.y;
+
+    this->has_init_pos = true;
+}
+
+PathFollowing::ProjectionData PathFollowing::nearest_projection_angle(const nav_msgs::msg::Path &path, Vec2f point)
 {
     double min_dist = std::numeric_limits<double>::max();
     Vec2f closest_projection{0, 0};
@@ -24,46 +45,31 @@ size_t PathFollowing::nearest_projection_angle(const nav_msgs::msg::Path& path, 
     double best_phi_c = 0.0;
 
     for (size_t i = 0; i < path.poses.size() - 1; ++i) {
-        const auto& poseA = path.poses[i].pose.position;
-        const auto& poseB = path.poses[i+1].pose.position;
+        Vec2f A(path.poses[i].pose.position.x, path.poses[i].pose.position.y);
+        Vec2f B(path.poses[i+1].pose.position.x, path.poses[i+1].pose.position.y);
 
-        // Segment vector
-        double dx = poseB.x - poseA.x;
-        double dy = poseB.y - poseA.y;
+        Vec2f AB = B - A;
+        Vec2f AQ = point - A;
+        
+        double ab_squared = std::pow(AB.x, 2) + std::pow(AB.y, 2);
+        double t = (ab_squared > 0) ? ((AQ.x * AB.x + AQ.y * AB.y) / ab_squared) : 0.0;
+        t = std::max(0.0, std::min(1.0, t));
 
-        // Vector from A to query point
-        double px = point.x - poseA.x;
-        double py = point.y - poseA.y;
+        Vec2f proj = A + AB * t;
+        double dist = (point - proj).norm();
 
-        double ab_squared = dx * dx + dy * dy;
-        double t = (ab_squared > 0) ? ((px * dx + py * dy) / ab_squared) : 0.0;
-        t = std::max(0.0, std::min(1.0, t)); // Clamp t to [0,1]
-
-        // Projection coordinates
-        Vec2f proj;
-        proj.x = poseA.x + t * dx;
-        proj.y = poseA.y + t * dy;
-
-        double dist = std::hypot(point.x - proj.x, point.y - proj.y);
-
-        // Unit tangent (tx, ty)
+        // Unit tangent
         double seg_len = std::sqrt(ab_squared);
-        double tx = (seg_len > 1e-9) ? dx / seg_len : 1.0;
-        double ty = (seg_len > 1e-9) ? dy / seg_len : 0.0;
+        double tx = (seg_len > 1e-9) ? AB.x / seg_len : 1.0;
+        double ty = (seg_len > 1e-9) ? AB.y / seg_len : 0.0;
 
         // Unit normal (right-hand rule)
         double nx = ty;
         double ny = -tx;
 
-        // Vector from projection to robot
-        double rx = point.x - proj.x;
-        double ry = point.y - proj.y;
-
-        // Signed lateral error (xn): projection of (R - T) onto normal
-        double x_n = rx * nx + ry * ny;
-
-        // Control angle
-        double phi_c = std::atan(-k * x_n);
+        Vec2f R_T = point - proj;
+        double x_n = R_T.x * nx + R_T.y * ny;
+        double phi_c = std::atan(-(this->k) * x_n);
 
         if (dist < min_dist) {
             min_dist = dist;

@@ -62,13 +62,28 @@ void PathPlanning::goal_callback(const geometry_msgs::msg::PoseStamped &goal)
 
 void PathPlanning::grid_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg){
     std::cout << "GRID CALLBACK" << std::endl;
+    this->grid = *msg;
+
+    create_cost_map();
+
+    cost_grid = grid;                               // Kopiere Header, Info, etc.
+    cost_grid.header.stamp = this->get_clock()->now();
+    size_t N = cost_map_.size();
+    cost_grid.data.resize(N);
+    for(size_t i = 0; i < N; ++i){
+        // mappe [0..1] -> [0..100]
+        int v = static_cast<int>(std::round(cost_map_[i] * 100.0));
+        // behalte echte Hindernisse als 100
+        if(grid.data[i] > threshold) v = 100;
+        cost_grid.data[i] = static_cast<int8_t>(v);
+    }
+
+    // 3) publish
+    costMapPublisher->publish(cost_grid);
+
     if(!this->path_calculated && this->start_position_recorded){
-
-        this->grid = *msg;
-
         std::cout << "Start calculating route" << std::endl;
         plan_route(this->start_position, this->goal_position);
-        std::cout << "Calculated ROUTE" << std::endl;
 
         std::cout << "Finished calculating path" << std::endl;
 
@@ -114,10 +129,10 @@ void PathPlanning::create_cost_map(){
       int x = i % w, y = i / w;
       for(auto &o : dirs){
         int nx = x + o[0], ny = y + o[1];
-        if(nx<0||nx>=w||ny<0||ny>=h) continue;
-        int ni = ny*w + nx;
-        // use 1 or 2 for step² (approx for diag: 1²+1²=2)
-        double step2 = (std::abs(o[0])+std::abs(o[1])==2) ? std::sqrt(2.0) : 1.0;
+        if(nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+        int ni = ny * w + nx;
+
+        double step2 = (std::abs(o[0]) + std::abs(o[1]) == 2) ? std::sqrt(2.0) : 1.0;
         double nd2 = d2 + step2;
         if(nd2 < dist2[ni] && nd2 <= rad2){
           dist2[ni] = nd2;
@@ -128,11 +143,11 @@ void PathPlanning::create_cost_map(){
 
     // 3) apply a one-sided Gaussian: cost = exp(–(d²)/(2σ²)), with σ=R/2
     double twoSigma2 = 2.0 * sigma * sigma;
-    for(int i=0;i<N;++i){
+    for(int i = 0; i < N; ++i){
       if(dist2[i] <= rad2){
         // convert cell-units back to meters
         double d_m = std::sqrt(dist2[i]) * res;
-        cost_map_[i] = 2 * std::exp( - (d_m*d_m) / twoSigma2 );
+        cost_map_[i] = 2 * std::exp( - (d_m * d_m) / twoSigma2);
       }
       // beyond R: cost_map_[i] stays 0
     }
