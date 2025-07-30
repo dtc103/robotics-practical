@@ -6,9 +6,24 @@
 
 class PathFollowing: public rclcpp::Node {
     public:
+
+        struct ProjectionData {
+            size_t segment_index;
+            Vec2f projection;    // Closest point on path
+            double x_n;          // Signed lateral error (right-hand rule)
+            double phi_c;        // Control angle (radians)
+        };
+
+
         PathFollowing();
+        void process_path(const nav_msgs::msg::Path::SharedPtr msg);
+        size_t nearest_projection(const nav_msgs::msg::Path& path, Vec2f point)
+
 
     private:
+        rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub;
+        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr processed_path_pub;
+
 };
 
 #endif
