@@ -62,27 +62,11 @@ void PathPlanning::goal_callback(const geometry_msgs::msg::PoseStamped &goal)
 
 void PathPlanning::grid_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg){
     std::cout << "GRID CALLBACK" << std::endl;
-    this->grid = *msg;
-
-    create_cost_map();
-
-    cost_grid = grid;                               // Kopiere Header, Info, etc.
-    cost_grid.header.stamp = this->get_clock()->now();
-    size_t N = cost_map_.size();
-    cost_grid.data.resize(N);
-    for(size_t i = 0; i < N; ++i){
-        // mappe [0..1] -> [0..100]
-        int v = static_cast<int>(std::round(cost_map_[i] * 100.0));
-        // behalte echte Hindernisse als 100
-        if(grid.data[i] > threshold) v = 100;
-        cost_grid.data[i] = static_cast<int8_t>(v);
-    }
-
-    // 3) publish
-    costMapPublisher->publish(cost_grid);
+    
 
     if(!this->path_calculated && this->start_position_recorded){
         std::cout << "Start calculating route" << std::endl;
+        this->grid = *msg;
         plan_route(this->start_position, this->goal_position);
 
         std::cout << "Finished calculating path" << std::endl;
