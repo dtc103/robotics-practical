@@ -16,7 +16,7 @@ PathPlanning::PathPlanning(): rclcpp::Node("path_planning") {
 
     std::cout << "Initialized parameters" << std::endl;
 
-    this->timer = this->create_wall_timer(1000ms, std::bind(&PathPlanning::timer_callback, this));
+    this->timer = this->create_wall_timer(500ms, std::bind(&PathPlanning::timer_callback, this));
 
     std::cout << "Created timer" << std::endl;
 
@@ -37,15 +37,9 @@ PathPlanning::PathPlanning(): rclcpp::Node("path_planning") {
 
 void PathPlanning::odomCallback(const nav_msgs::msg::Odometry &odom)
 {
-    //std::cout << "POSITION ->" << odom.pose.pose.position.x << ":" << odom.pose.pose.position.y << std::endl;
-    if(!start_position_recorded){
-        start_position.x = odom.pose.pose.position.x;
-        start_position.y = odom.pose.pose.position.y;
-
-        std::cout << "START POSITION ->" << start_position.x << ":" << start_position.y << std::endl;
-
-        this->start_position_recorded = true;
-    }
+    current_position_.x = odom.pose.pose.position.x;
+    current_position_.y = odom.pose.pose.position.y;
+    odom_received_ = true;
 }
 
 void PathPlanning::goal_callback(const geometry_msgs::msg::PoseStamped &goal)
@@ -56,8 +50,7 @@ void PathPlanning::goal_callback(const geometry_msgs::msg::PoseStamped &goal)
 
     std::cout << "NEW GOAL POSITION ->" << goal_position.x << ":" << goal_position.y << std::endl;
 
-    this->path_calculated = false;
-    this->start_position_recorded = false;
+    this->goal_active_ = true;
 }
 
 void PathPlanning::grid_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg){
@@ -65,79 +58,96 @@ void PathPlanning::grid_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr m
 
     this->grid = *msg;
 
-    publishCostMap();
+    publish_cost_map();
 
-    if(!this->path_calculated && this->start_position_recorded){
-        std::cout << "Start calculating route" << std::endl;
-        plan_route(this->start_position, this->goal_position);
+    if (odom_received_ && goal_active_) {
+        auto t_start = std::chrono::high_resolution_clock::now();
 
-        std::cout << "Finished calculating path" << std::endl;
+        plan_route(current_position_, goal_position);
 
-        this->path_calculated = true;
+        this->path.header.stamp = this->get_clock()->now();
+        this->pathPublisher->publish(this->path);
+
+        auto t_end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
+
+        std::cout << "Replanned path from ("
+        << current_position_.x << ", " << current_position_.y
+        << ") to ("
+        << goal_position.x << ", " << goal_position.y
+        << ") in " << duration << " ms" << std::endl;
+
     }
+    
 }
 
-void PathPlanning::create_cost_map() {
+void PathPlanning::create_cost_map(){
     this->get_parameter("inflation_radius", inflation_radius_);
     this->get_parameter("sigma", sigma);
 
-    auto start = std::chrono::high_resolution_clock::now();
-  
     int w = grid.info.width;
     int h = grid.info.height;
-    int N = w * h;
+    int N = w*h;
     double res = grid.info.resolution;
-    double R   = inflation_radius_;
-  
-    std::vector<double> f(N, std::numeric_limits<double>::infinity());
-    for(int i = 0; i < N; ++i) {
-      if(grid.data[i] > threshold) {
-        f[i] = 0.0;
+    double R = inflation_radius_;
+
+    // prepare
+    cost_map_.assign(N, 0.0);
+    std::vector<double> dist2(N, std::numeric_limits<double>::infinity());
+    using PQE = std::pair<double,int>;
+    std::priority_queue<PQE, std::vector<PQE>, std::greater<>> pq;
+
+    // 1) seed all true obstacles at dist²=0
+    for(int i=0;i<N;++i){
+      if(grid.data[i] > threshold){
+        dist2[i] = 0.0;
+        pq.push({0.0,i});
       }
     }
-  
-    // 2) EDT in O(N)
-    std::vector<double> dist2(N);
-    edt_2d(f, dist2, w, h);
-  
+
+    // 2) multi-source Dijkstra to fill dist2 up to R² (in cells)
     double rad_cells = R / res;
-    double rad2 = rad_cells * rad_cells;
-    for(int i = 0; i < N; ++i) {
-      if(dist2[i] > rad2) dist2[i] = std::numeric_limits<double>::infinity();
-    }
-  
-    applyLinear(dist2, res, R);
+    double rad2 = rad_cells*rad_cells;
+    const int dirs[8][2] = {
+      { 1, 0}, {-1, 0}, { 0, 1}, { 0,-1},
+      { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
+    };
+    while(!pq.empty()){
+      auto [d2,i] = pq.top(); pq.pop();
+      if(d2 > dist2[i] || d2 > rad2) continue;
 
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> elapsed = end - start;
+      int x = i % w, y = i / w;
+      for(auto &o : dirs){
+        int nx = x + o[0], ny = y + o[1];
+        if(nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+        int ni = ny * w + nx;
 
-    std::cout << elapsed.count() << std::endl;
-  }
-  
-
-void PathPlanning::publishCostMap() {
-    create_cost_map();
-
-    cost_grid = grid;  
-    cost_grid.header.stamp = this->get_clock()->now();
-    size_t N = cost_map_.size();
-    cost_grid.data.resize(N);
-    for(size_t i = 0; i < N; ++i){
-      int v = static_cast<int>(std::round(cost_map_[i] * 100.0));
-      if (grid.data[i] > threshold) v = 100;  
-      cost_grid.data[i] = static_cast<int8_t>(v);
+        double step2 = (std::abs(o[0]) + std::abs(o[1]) == 2) ? std::sqrt(2.0) : 1.0;
+        double nd2 = d2 + step2;
+        if(nd2 < dist2[ni] && nd2 <= rad2){
+          dist2[ni] = nd2;
+          pq.push({nd2, ni});
+        }
+      }
     }
 
-    costMapPublisher->publish(cost_grid);
+    // 3) apply a one-sided Gaussian: cost = exp(–(d²)/(2σ²)), with σ=R/2
+    double twoSigma2 = 2.0 * sigma * sigma;
+    for(int i = 0; i < N; ++i){
+      if(dist2[i] <= rad2){
+        // convert cell-units back to meters
+        double d_m = std::sqrt(dist2[i]) * res;
+        cost_map_[i] = 2 * std::exp( - (d_m * d_m) / twoSigma2);
+      }
+      // beyond R: cost_map_[i] stays 0
+    }
 }
-
 
 void PathPlanning::plan_route(Vec2f start, Vec2f goal){
     int start_idx = get_grid_index(start);
     int goal_idx = get_grid_index(goal);
 
-    publishCostMap();
-    
+    publish_cost_map();
 
     auto path = astar(start_idx, goal_idx, this->grid.info.width, this->grid.info.height);
     std::vector<geometry_msgs::msg::PoseStamped> world_coords;
@@ -174,7 +184,6 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
             int cur = goal;
             while (true)
             {
-                std::cout << "FKLJDGBHSFJKDVÖBLJ VFBJKLDS BIULND FKJÖDN L!" << std::endl;
                 path.push_back(cur);
                 if (cur == start)
                     break;
@@ -223,14 +232,7 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
 }
 
 void PathPlanning::timer_callback(){
-    std::cout << this->path_calculated << ", " << this->start_position_recorded << std::endl;
-    if(this->path_calculated){
-        for(auto p : this->path.poses){
-            std::cout << p.pose.position.x << ":" << p.pose.position.y << " | ";
-        }
-        std::cout << std::endl;
-        this->pathPublisher->publish(this->path);
-    }
+    
 }
 
 Vec2i PathPlanning::odom_to_grid(Vec2f world) {
@@ -242,7 +244,7 @@ Vec2i PathPlanning::odom_to_grid(Vec2f world) {
 int PathPlanning::get_grid_index(Vec2f &p_world){
     Vec2i g = odom_to_grid(p_world);
 
-    if(g.x < 0 || g.x >= this->grid.info.width || g.y < 0 || g.y >= this->grid.info.height){
+    if(g.x < 0 || g.x >= (int) this->grid.info.width || g.y < 0 || g.y >= (int) this->grid.info.height){
         return -1;
     }
 
@@ -279,39 +281,6 @@ Vec2f PathPlanning::gridIndexToWorld(int idx) {
     return Vec2f(x_world, y_world);
 }
 
-
-void PathPlanning::applyGaussian(const std::vector<double>& dist2, double resolution, double sigma, double inflation_radius) {
-    int N = dist2.size();
-    double twoSigma2 = 2.0 * sigma * sigma;
-
-    for(int i=0; i<N; ++i){
-        if(dist2[i] < std::numeric_limits<double>::infinity()){
-            double dist_m = std::sqrt(dist2[i]) * resolution;
-            if(dist_m <= inflation_radius) {
-                cost_map_[i] = 2.0 * std::exp(-(dist_m*dist_m) / twoSigma2);
-                continue;
-            }
-        }
-        cost_map_[i] = 0.0;
-    }
-}
-
-
-void PathPlanning::applyLinear(const std::vector<double>& dist2, double resolution, double inflation_radius) {
-    int N = dist2.size();
-    for(int i = 0; i < N; ++i) {
-        if(dist2[i] < std::numeric_limits<double>::infinity()) {
-            double dist_m = std::sqrt(dist2[i]) * resolution;
-            if(dist_m <= inflation_radius) {
-                cost_map_[i] = (inflation_radius - dist_m) / inflation_radius;
-                continue;
-            }
-        }
-        cost_map_[i] = 0.0;
-    }
-}
-
-
 double PathPlanning::manhatten_distance(int idx, int goal, int width) {
     int x1 = idx / width;
     int y1 = idx % width;
@@ -330,56 +299,19 @@ double PathPlanning::shapley_distance(int a, int b, int width) {
 }
 
 
+void PathPlanning::publish_cost_map() {
+    create_cost_map();
 
-// Fast Euclidean Distance Transform (Felzenszwalb & Huttenlocher):
-// edt_1d: 1D pass computing min (q–p)² + f[p] for a vector f in O(n).
-// edt_2d: applies edt_1d to each column then each row to get
-//         squared distance-to-obstacle for every grid cell in O(width·height).
-void PathPlanning::edt_1d(const std::vector<double>& f, std::vector<double>& d, int n) {
-    std::vector<int> v(n);
-    std::vector<double> z(n+1);
-    const double INF_D = std::numeric_limits<double>::infinity();
-    int k = 0;
-    v[0] = 0;
-    z[0] = -INF_D;
-    z[1] = +INF_D;
-    for(int q = 1; q < n; ++q) {
-      double s = ((f[q] + q*q) - (f[v[k]] + v[k]*v[k])) / (2.0*(q - v[k]));
-      while(s <= z[k]) {
-        --k;
-        s = ((f[q] + q*q) - (f[v[k]] + v[k]*v[k])) / (2.0*(q - v[k]));
-      }
-      ++k; 
-      v[k] = q;
-      z[k]   = s;
-      z[k+1] = +INF_D;
-    }
-    k = 0;
-    for(int q = 0; q < n; ++q) {
-      while(z[k+1] < q) ++k;
-      double diff = q - v[k];
-      d[q] = diff*diff + f[v[k]];
-    }
-  }
-  
-void PathPlanning::edt_2d(const std::vector<double>& grid, std::vector<double>& dist2, int w, int h) {
-    std::vector<double> tmp(std::max(w,h));
-    for(int x = 0; x < w; ++x) {
-      for(int y = 0; y < h; ++y)
-        tmp[y] = grid[y*w + x];
-      std::vector<double> col_d(h);
-      edt_1d(tmp, col_d, h);
-      for(int y = 0; y < h; ++y)
-        dist2[y*w + x] = col_d[y];
-    }
-    for(int y = 0; y < h; ++y) {
-      for(int x = 0; x < w; ++x)
-        tmp[x] = dist2[y*w + x];
-      std::vector<double> row_d(w);
-      edt_1d(tmp, row_d, w);
-      for(int x = 0; x < w; ++x)
-        dist2[y*w + x] = row_d[x];
-    }
-  }
+    cost_grid = grid;
+    cost_grid.header.stamp = this->get_clock()->now();
 
-  
+    size_t N = cost_map_.size();
+    cost_grid.data.resize(N);
+    for (size_t i = 0; i < N; ++i) {
+        int v = static_cast<int>(std::round(cost_map_[i] * 100.0));
+        if (grid.data[i] > threshold) v = 100;
+        cost_grid.data[i] = static_cast<int8_t>(v);
+    }
+
+    costMapPublisher->publish(cost_grid);
+}

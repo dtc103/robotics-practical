@@ -29,12 +29,8 @@ class PathPlanning: public rclcpp::Node {
 
     private:
         void grid_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
-        void publishCostMap();
-        void applyGaussian(const std::vector<double>& dist2, double resolution, double sigma, double inflation_radius);
-        void applyLinear(const std::vector<double>& dist2, double resolution, double inflation_radius);
         void plan_route(Vec2f start, Vec2f goal);
-        void edt_2d(const std::vector<double>& grid, std::vector<double>& dist2, int w, int h);
-        void edt_1d(const std::vector<double>& f, std::vector<double>& d, int n);
+        void publish_cost_map();
         std::vector<int> astar(int  start_idx, int goal_idx, int width, int height);
         int get_grid_index(Vec2f &p_world);
         Vec2i odom_to_grid(Vec2f world);
@@ -51,10 +47,18 @@ class PathPlanning: public rclcpp::Node {
 
         double threshold;
         bool path_calculated = false;
-        bool start_position_recorded = false;
 
         Vec2f start_position;
+        bool start_position_recorded = false;
+
         Vec2f goal_position;
+        bool goal_active_ = false;
+
+        Vec2f current_position_;
+        bool odom_received_ = false;
+
+
+
 
         double inflation_radius_;
         double sigma;
