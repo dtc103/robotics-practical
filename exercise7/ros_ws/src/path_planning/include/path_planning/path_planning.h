@@ -42,11 +42,13 @@ class PathPlanning: public rclcpp::Node {
         void odomCallback(const nav_msgs::msg::Odometry &odom);
         void goal_callback(const geometry_msgs::msg::PoseStamped &goal);
 
+        std::vector<float> computeDistanceMap();
+
+
         rclcpp::TimerBase::SharedPtr timer;
         void timer_callback();
 
         double threshold;
-        bool path_calculated = false;
 
         Vec2f goal_position;
         bool goal_active_ = false;
@@ -60,6 +62,8 @@ class PathPlanning: public rclcpp::Node {
         double inflation_radius_;
         double sigma;
         std::vector<double> cost_map_;
+
+        
 
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goalSubscription;
 

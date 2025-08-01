@@ -58,14 +58,7 @@ void PathPlanning::grid_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr m
 
     this->grid = *msg;
 
-    auto t_start = std::chrono::high_resolution_clock::now();
-
     publish_cost_map();
-
-    auto t_end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
-
-    std::cout << "Costmap calculation:" <<  duration << " ms" << std::endl;
 }
 
 void PathPlanning::create_cost_map(){
@@ -74,50 +67,29 @@ void PathPlanning::create_cost_map(){
 
     int w = grid.info.width;
     int h = grid.info.height;
-    int N = w*h;
+    int N = w * h;
     double res = grid.info.resolution;
     double R = inflation_radius_;
+    double rad_cells = R / res;
+    double rad2 = rad_cells * rad_cells;
+
+
+
+    auto t_start = std::chrono::high_resolution_clock::now();
+
+    std::vector<float> dist2 = computeDistanceMap();
+
+    auto t_end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
+
+    std::cout << "Costmap calculation:" <<  duration << " ms" << std::endl;
+
+
 
     // prepare
     cost_map_.assign(N, 0.0);
-    std::vector<double> dist2(N, std::numeric_limits<double>::infinity());
-    using PQE = std::pair<double,int>;
-    std::priority_queue<PQE, std::vector<PQE>, std::greater<>> pq;
 
-    // 1) seed all true obstacles at dist²=0
-    for(int i=0;i<N;++i){
-      if(grid.data[i] > threshold){
-        dist2[i] = 0.0;
-        pq.push({0.0,i});
-      }
-    }
-
-    // 2) multi-source Dijkstra to fill dist2 up to R² (in cells)
-    double rad_cells = R / res;
-    double rad2 = rad_cells*rad_cells;
-    const int dirs[8][2] = {
-      { 1, 0}, {-1, 0}, { 0, 1}, { 0,-1},
-      { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
-    };
-    while(!pq.empty()){
-      auto [d2,i] = pq.top(); pq.pop();
-      if(d2 > dist2[i] || d2 > rad2) continue;
-
-      int x = i % w, y = i / w;
-      for(auto &o : dirs){
-        int nx = x + o[0], ny = y + o[1];
-        if(nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-        int ni = ny * w + nx;
-
-        double step2 = (std::abs(o[0]) + std::abs(o[1]) == 2) ? std::sqrt(2.0) : 1.0;
-        double nd2 = d2 + step2;
-        if(nd2 < dist2[ni] && nd2 <= rad2){
-          dist2[ni] = nd2;
-          pq.push({nd2, ni});
-        }
-      }
-    }
-
+    
     // 3) apply a one-sided Gaussian: cost = exp(–(d²)/(2σ²)), with σ=R/2
     double twoSigma2 = 2.0 * sigma * sigma;
     for(int i = 0; i < N; ++i){
@@ -331,3 +303,48 @@ void PathPlanning::publish_cost_map() {
 
     costMapPublisher->publish(cost_grid);
 }
+
+
+std::vector<float> PathPlanning::computeDistanceMap() {
+    int w = grid.info.width;
+    int h = grid.info.height;
+    int N = w * h;
+    float res = grid.info.resolution;
+    float R = inflation_radius_;
+    float rad_cells = R / res;
+    float rad2 = rad_cells * rad_cells;
+
+    std::vector<float> dist2(N, std::numeric_limits<float>::infinity());
+    using PQE = std::pair<float,int>;
+    std::priority_queue<PQE, std::vector<PQE>, std::greater<>> pq;
+
+    // 1) Seed obstacles
+    for (int i = 0; i < N; ++i) {
+        if (grid.data[i] > threshold) {
+            dist2[i] = 0.0;
+            pq.push({0.0, i});
+        }
+    }
+
+    // 2) Multi-source Dijkstra up to radius
+    const int dirs[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
+    while (!pq.empty()) {
+        auto [d2, idx] = pq.top(); pq.pop();
+        if (d2 > dist2[idx] || d2 > rad2) continue;
+        int x = idx % w, y = idx / w;
+        for (auto &d : dirs) {
+            int nx = x + d[0], ny = y + d[1];
+            if (nx<0||nx>=w||ny<0||ny>=h) continue;
+            int ni = ny*w + nx;
+            float step2 = (std::abs(d[0])+std::abs(d[1])==2 ? std::sqrt(2.0) : 1.0);
+            float nd2 = d2 + step2;
+            if (nd2 < dist2[ni] && nd2 <= rad2) {
+                dist2[ni] = nd2;
+                pq.push({nd2, ni});
+            }
+        }
+    }
+    return dist2;
+}
+
+
