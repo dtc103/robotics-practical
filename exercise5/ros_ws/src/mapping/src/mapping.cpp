@@ -88,7 +88,8 @@ double Mapping::inverseSensorModel(double dist, double z, double z_max){
     if (z >= z_max || std::isnan(z))                  // no return (max-range reading)
         return l_free;
 
-    if (dist > z - grid_resolution * 0.5)             // hit cell
+    // Wall strenght
+    if (dist > z - grid_resolution * 0.7)             // hit cell
         return l_occ;
 
     if (dist < z)                                     // ray before hit

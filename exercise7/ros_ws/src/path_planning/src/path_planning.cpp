@@ -16,7 +16,7 @@ PathPlanning::PathPlanning(): rclcpp::Node("path_planning") {
 
     std::cout << "Initialized parameters" << std::endl;
 
-    this->timer = this->create_wall_timer(500ms, std::bind(&PathPlanning::timer_callback, this));
+    this->timer = this->create_wall_timer(100ms, std::bind(&PathPlanning::timer_callback, this));
 
     std::cout << "Created timer" << std::endl;
 
@@ -58,27 +58,14 @@ void PathPlanning::grid_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr m
 
     this->grid = *msg;
 
+    auto t_start = std::chrono::high_resolution_clock::now();
+
     publish_cost_map();
 
-    if (odom_received_ && goal_active_) {
-        auto t_start = std::chrono::high_resolution_clock::now();
+    auto t_end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
 
-        plan_route(current_position_, goal_position);
-
-        this->path.header.stamp = this->get_clock()->now();
-        this->pathPublisher->publish(this->path);
-
-        auto t_end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
-
-        std::cout << "Replanned path from ("
-        << current_position_.x << ", " << current_position_.y
-        << ") to ("
-        << goal_position.x << ", " << goal_position.y
-        << ") in " << duration << " ms" << std::endl;
-
-    }
-    
+    std::cout << "Costmap calculation:" <<  duration << " ms" << std::endl;
 }
 
 void PathPlanning::create_cost_map(){
@@ -147,8 +134,6 @@ void PathPlanning::plan_route(Vec2f start, Vec2f goal){
     int start_idx = get_grid_index(start);
     int goal_idx = get_grid_index(goal);
 
-    publish_cost_map();
-
     auto path = astar(start_idx, goal_idx, this->grid.info.width, this->grid.info.height);
     std::vector<geometry_msgs::msg::PoseStamped> world_coords;
     for(auto idx : path) {
@@ -163,15 +148,16 @@ void PathPlanning::plan_route(Vec2f start, Vec2f goal){
 }
 
 std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
-{
+{   
+
+    int N = height * width;
     std::priority_queue<Node, std::vector<Node>, Compare> open;
     open.push({start, this->shapley_distance(start, goal, width), 0});
-
-    std::unordered_map<int, int> came_from;
-    std::unordered_map<int, double> g_score;
+    std::vector<double> g_score(N, std::numeric_limits<double>::infinity());
+    std::vector<int>    came_from(N, -1);
+    std::vector<uint8_t> closed(N, 0);
     g_score[start] = 0.0;
 
-    std::unordered_set<int> closed;
 
     while (!open.empty())
     {
@@ -193,9 +179,9 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
             return path;
         }
 
-        if (closed.count(current.idx))
+        if (closed[current.idx]) 
             continue;
-        closed.insert(current.idx);
+        closed[current.idx] = 1;
 
         int cx = current.idx % width;
         int cy = current.idx / width;
@@ -205,25 +191,38 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
         {
             int nx = cx + d[0];
             int ny = cy + d[1];
-            if (nx < 0 || nx >= height || ny < 0 || ny >= width)
+            if (nx < 0 || nx >= width || ny < 0 || ny >= height)
                 continue;
+
+            
+            // avoids corner cutting
+            if (std::abs(d[0])==1 && std::abs(d[1])==1) {
+                int idx_x = cy*width + (cx + d[0]);      // horizontal neighbour
+                int idx_y = (cy + d[1])*width + cx;      // vertical neighbour
+                if (grid.data[idx_x] > threshold || grid.data[idx_y] > threshold)
+                    continue;
+                }
+
+            
             int nidx = ny * width + nx;
             if (this->grid.data[nidx] > this->threshold)
                 continue; // occupied
-            
             double base = (std::abs(d[0]) + std::abs(d[1]) == 2)
             ? std::sqrt(2.0)
             : 1.0;
             double move_cost = base + cost_map_[nidx];
             double tentative_g = current.g + move_cost;
 
-            auto it = g_score.find(nidx);
-            if (it == g_score.end() || tentative_g < it->second)
-            {
+
+
+            if (tentative_g < g_score[nidx]) {
                 came_from[nidx] = current.idx;
-                g_score[nidx] = tentative_g;
-                double f = tentative_g + shapley_distance(nidx, goal, width);
-                open.push({nidx, f, tentative_g});
+                g_score[nidx]    = tentative_g;
+
+                double h = shapley_distance(nidx, goal, width);
+                double f = tentative_g + h;
+
+                open.push({ nidx, f, tentative_g });
             }
         }
     }
@@ -232,7 +231,24 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
 }
 
 void PathPlanning::timer_callback(){
-    
+    if (odom_received_ && goal_active_) {
+        auto t_start = std::chrono::high_resolution_clock::now();
+
+        plan_route(current_position_, goal_position);
+
+        this->path.header.stamp = this->get_clock()->now();
+        this->pathPublisher->publish(this->path);
+
+        auto t_end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
+
+        std::cout << "Replanned path from ("
+        << current_position_.x << ", " << current_position_.y
+        << ") to ("
+        << goal_position.x << ", " << goal_position.y
+        << ") in " << duration << " ms" << std::endl;
+
+    }
 }
 
 Vec2i PathPlanning::odom_to_grid(Vec2f world) {

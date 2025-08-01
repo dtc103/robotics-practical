@@ -48,9 +48,6 @@ class PathPlanning: public rclcpp::Node {
         double threshold;
         bool path_calculated = false;
 
-        Vec2f start_position;
-        bool start_position_recorded = false;
-
         Vec2f goal_position;
         bool goal_active_ = false;
 
