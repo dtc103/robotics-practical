@@ -48,7 +48,6 @@ class PathPlanning: public rclcpp::Node {
         rclcpp::TimerBase::SharedPtr timer;
         void timer_callback();
 
-        double threshold;
 
         Vec2f goal_position;
         bool goal_active_ = false;
@@ -57,8 +56,11 @@ class PathPlanning: public rclcpp::Node {
         bool odom_received_ = false;
 
 
-
-
+        std::vector<float> dist2_;
+        
+        
+        double min_clearance;
+        double threshold;
         double inflation_radius_;
         double sigma;
         std::vector<double> cost_map_;

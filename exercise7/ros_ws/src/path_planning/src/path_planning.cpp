@@ -7,10 +7,14 @@ PathPlanning::PathPlanning(): rclcpp::Node("path_planning") {
     this->declare_parameter<double>("threshold", 60.0);
     this->declare_parameter<double>("inflation_radius", 1.5);
     this->declare_parameter<double>("sigma", 1.5);
+    this->declare_parameter<double>("min_clearance", 0.5);
+
 
     inflation_radius_ = this->get_parameter("inflation_radius").as_double();
     threshold = this->get_parameter("threshold").as_double();
     sigma = this->get_parameter("sigma").as_double();
+    min_clearance = this->get_parameter("min_clearance").as_double();
+
 
     this->path.header.frame_id = "odom";
 
@@ -84,7 +88,8 @@ void PathPlanning::create_cost_map(){
 
     std::cout << "Costmap calculation:" <<  duration << " ms" << std::endl;
 
-
+    // save for A* min distance check
+    dist2_ = dist2;
 
     // prepare
     cost_map_.assign(N, 0.0);
@@ -163,9 +168,20 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
         {
             int nx = cx + d[0];
             int ny = cy + d[1];
+
+            int nidx = ny * width + nx;
+
+            // check bounds
             if (nx < 0 || nx >= width || ny < 0 || ny >= height)
                 continue;
 
+            // gap to small
+            double dist_m = dist2_[nidx] * grid.info.resolution; 
+            if (dist_m < min_clearance) {
+                std::cout << dist_m << std::endl;
+                std::cout << "Gap to small" << std::endl;
+                continue;
+            }
             
             // avoids corner cutting
             if (std::abs(d[0])==1 && std::abs(d[1])==1) {
@@ -175,10 +191,11 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
                     continue;
                 }
 
-            
-            int nidx = ny * width + nx;
+            // skip occupied cells    
             if (this->grid.data[nidx] > this->threshold)
-                continue; // occupied
+                continue; 
+             
+            
             double base = (std::abs(d[0]) + std::abs(d[1]) == 2)
             ? std::sqrt(2.0)
             : 1.0;

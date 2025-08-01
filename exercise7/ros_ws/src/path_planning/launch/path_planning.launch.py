@@ -10,6 +10,7 @@ def generate_launch_description():
             DeclareLaunchArgument("inflation_radius", default_value="1.0", description=""),
             DeclareLaunchArgument("sigma", default_value="0.2", description=""),
             DeclareLaunchArgument("threshold", default_value="51.0", description=""),
+            DeclareLaunchArgument("min_clearance", default_value="0.5", description=""),
             DeclareLaunchArgument("use_sim_time", default_value="true", description=""),
             Node(
                 package="path_planning",
@@ -19,6 +20,7 @@ def generate_launch_description():
                     {"inflation_radius":LaunchConfiguration("inflation_radius")},
                     {"sigma":LaunchConfiguration("sigma")},
                     {"threshold": LaunchConfiguration("threshold")},
+                    {"min_clearance":LaunchConfiguration("min_clearance")},
                 ],
                 output="screen"
             )
