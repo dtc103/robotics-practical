@@ -81,15 +81,12 @@ void PathPlanning::create_cost_map(){
 
     auto t_start = std::chrono::high_resolution_clock::now();
 
-    std::vector<float> dist2 = computeDistanceMap();
+    dist2_ = computeDistanceMap();
 
     auto t_end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
 
     std::cout << "Costmap calculation:" <<  duration << " ms" << std::endl;
-
-    // save for A* min distance check
-    dist2_ = dist2;
 
     // prepare
     cost_map_.assign(N, 0.0);
@@ -98,9 +95,9 @@ void PathPlanning::create_cost_map(){
     // 3) apply a one-sided Gaussian: cost = exp(–(d²)/(2σ²)), with σ=R/2
     double twoSigma2 = 2.0 * sigma * sigma;
     for(int i = 0; i < N; ++i){
-      if(dist2[i] <= rad2){
+      if(dist2_[i] <= rad2){
         // convert cell-units back to meters
-        double d_m = std::sqrt(dist2[i]) * res;
+        double d_m = std::sqrt(dist2_[i]) * res;
         cost_map_[i] = 2 * std::exp( - (d_m * d_m) / twoSigma2);
       }
       // beyond R: cost_map_[i] stays 0
@@ -135,6 +132,7 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
     std::vector<uint8_t> closed(N, 0);
     g_score[start] = 0.0;
 
+    double min_clearance_cells = min_clearance / grid.info.resolution;
 
     while (!open.empty())
     {
@@ -176,9 +174,8 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
                 continue;
 
             // gap to small
-            double dist_m = dist2_[nidx] * grid.info.resolution; 
-            if (dist_m < min_clearance) {
-                std::cout << dist_m << std::endl;
+            if (dist2_[nidx] < min_clearance_cells) {
+                std::cout << dist2_[nidx] << std::endl;
                 std::cout << "Gap to small" << std::endl;
                 continue;
             }

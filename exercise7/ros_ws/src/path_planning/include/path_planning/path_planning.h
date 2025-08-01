@@ -41,7 +41,7 @@ class PathPlanning: public rclcpp::Node {
         double shapley_distance(int a, int b, int width);
         void odomCallback(const nav_msgs::msg::Odometry &odom);
         void goal_callback(const geometry_msgs::msg::PoseStamped &goal);
-
+        
         std::vector<float> computeDistanceMap();
 
 
