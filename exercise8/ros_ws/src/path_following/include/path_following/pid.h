@@ -14,7 +14,7 @@ class PID{
         void set_i_gain(double);
         void set_d_gain(double);
         
-        double update(double, unsigned long current_time);
+        double update(double, double current_time);
         
         void new_set_point(double);
         void reset();
@@ -28,7 +28,7 @@ class PID{
         double i_gain;
         double d_gain;
 
-        unsigned long last_time_update = 0;
+        double last_time_update = 0.0;
 };
 
 #endif

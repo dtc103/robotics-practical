@@ -7,8 +7,8 @@ from launch.substitutions import LaunchConfiguration
 def generate_launch_description():
     return LaunchDescription(
         [
-            DeclareLaunchArgument("grid_width", default_value="100", description=""),
-            DeclareLaunchArgument("grid_height", default_value="100", description=""),
+            DeclareLaunchArgument("grid_width", default_value="1000", description=""),
+            DeclareLaunchArgument("grid_height", default_value="1000", description=""),
             DeclareLaunchArgument("grid_resolution", default_value="0.1", description=""),
             DeclareLaunchArgument("p_occ", default_value="0.8", description=""),
             DeclareLaunchArgument("p_free", default_value="0.45", description=""),
@@ -24,6 +24,7 @@ def generate_launch_description():
                     {"p_occ": LaunchConfiguration("p_occ")},
                     {"p_free": LaunchConfiguration("p_free")},
                 ],
+                remappings=[("/scan", "/base_scan")],
                 output="screen"
             )
         ]

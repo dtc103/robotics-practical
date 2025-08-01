@@ -9,7 +9,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("inflation_radius", default_value="1.0", description=""),
             DeclareLaunchArgument("sigma", default_value="0.2", description=""),
-            DeclareLaunchArgument("threshold", default_value="45.0", description=""),
+            DeclareLaunchArgument("threshold", default_value="60.0", description=""),
             DeclareLaunchArgument("use_sim_time", default_value="true", description=""),
             Node(
                 package="path_planning",

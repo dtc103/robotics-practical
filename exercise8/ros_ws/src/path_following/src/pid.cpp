@@ -24,21 +24,24 @@ void PID::set_d_gain(double d_gain){
     this->d_gain = d_gain;
 }
 
-double PID::update(double current_value, unsigned long current_time){
+double PID::update(double current_value, double current_time){
     double curr_time = current_time;
     double dt = curr_time - last_time_update;
     this->last_time_update = curr_time;
 
     double error = this->set_point - current_value;
 
-    // TODO change to rad, if necessary
-    if(error > 180.0){
-        error -= 360.0;
-    }else if(error < -180.0){
-        error += 360.0;
-    }
+
+    // // TODO change to rad, if necessary
+    // if(error > 180.0){
+    //     error -= 360.0;
+    // }else if(error < -180.0){
+    //     error += 360.0;
+    // }
 
     double p_value = error;
+    std::cout << "P value: " << p_value << ", ";
+
 
     this->integral += (error * dt);
     if(this->integral > (double)PID::MAX_INTEGRAL_VALUE){
@@ -46,11 +49,13 @@ double PID::update(double current_value, unsigned long current_time){
     }else if(this->integral < (double)(-PID::MAX_INTEGRAL_VALUE)){
         this->integral = (double)(-PID::MAX_INTEGRAL_VALUE);
     }
+    std::cout << "I value: " << integral << ", ";
 
     double derivative = (error - this->prev_error) / dt;
     this->prev_error = error;
+    std::cout << "D value: " << derivative << std::endl;
 
-    return this->p_gain * p_value + this->i_gain * this->integral + this->d_gain * derivative;
+    return this->p_gain * p_value + /*this->i_gain * this->integral +*/ this->d_gain * derivative;
 }
 
 void PID::new_set_point(double set_point){

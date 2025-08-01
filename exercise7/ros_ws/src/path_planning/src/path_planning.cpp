@@ -245,10 +245,7 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
 void PathPlanning::timer_callback(){
     std::cout << this->path_calculated << ", " << this->start_position_recorded << std::endl;
     if(this->path_calculated){
-        for(auto p : this->path.poses){
-            std::cout << p.pose.position.x << ":" << p.pose.position.y << " | ";
-        }
-        std::cout << std::endl;
+        std::cout << this->path.poses.size() << std::endl;
         this->pathPublisher->publish(this->path);
     }
 }
