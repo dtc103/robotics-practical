@@ -25,7 +25,13 @@ find_package(sensor_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(message_filters REQUIRED)
-find_package(ALGLIB REQUIRED)
+#find_package(ALGLIB REQUIRED)
+
+# Set the ALGLIB directory
+set(ALGLIB_DIR "/home/jan/install/alglib/src")
+
+# Add all ALGLIB source files
+file(GLOB ALGLIB_SOURCES "${ALGLIB_DIR}/*.cpp")
 
 include_directories(
   include/${PROJECT_NAME}
@@ -38,11 +44,11 @@ add_executable(path_following
   src/path_processing.cpp
   src/plot_data.cpp
   src/pid.cpp
-  ${ALGBLIB_DIR}
+  ${ALGLIB_SOURCES}
 )
 
-ament_target_dependencies(path_following rclcpp std_msgs geometry_msgs nav_msgs sensor_msgs tf2_ros tf2_geometry_msgs message_filters ALGLIB)
-target_link_libraries(path_following alglib)
+ament_target_dependencies(path_following rclcpp std_msgs geometry_msgs nav_msgs sensor_msgs tf2_ros tf2_geometry_msgs message_filters )#ALGLIB)
+#target_link_libraries(path_following alglib)
 
 install(TARGETS path_following
   DESTINATION lib/${PROJECT_NAME}

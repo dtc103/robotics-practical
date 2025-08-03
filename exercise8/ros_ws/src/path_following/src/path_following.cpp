@@ -49,16 +49,10 @@ void PathFollowing::goal_callback(const geometry_msgs::msg::PoseStamped &goal)
 }
 
 void PathFollowing::process_path(const nav_msgs::msg::Path::SharedPtr msg){
-    auto path = processPath(*msg);
+    this->processed_path = processPath(*msg);
 
-    this->processed_path_pub->publish(path);
+    this->processed_path_pub->publish(this->processed_path);
 
-    std::cout << "run nearest_projections" << std::endl;
-    if(has_init_pos && path.poses.size() > 0){
-        auto s = nearest_projection_angle(path, this->curr_pos);
-        this->controller.new_set_point(-s.phi_c);
-        std::cout << "Set Point: " << -s.phi_c << std::endl;
-    }
 
     this->received_path = true;
 }
@@ -67,6 +61,13 @@ void PathFollowing::move(){
     geometry_msgs::msg::Twist twistMsg;
 
     if(this->received_path){
+        std::cout << "run nearest_projections" << std::endl;
+        if(this->has_init_pos && this->processed_path.poses.size() > 0){
+            double phi_c = nearest_projection_angle(this->processed_path, this->curr_pos);
+            this->controller.new_set_point(phi_c);
+            std::cout << "Set Point: " << phi_c << std::endl;
+        }
+    
 
         rclcpp::Time now = this->now();
         double error = this->controller.update(this->robot_yaw, now.seconds());
@@ -80,7 +81,7 @@ void PathFollowing::move(){
         //     error += 2 * std::numbers::pi;
         // }
     
-        twistMsg.linear.x = 0.1;
+        twistMsg.linear.x = 0.5;
         twistMsg.angular.z = error;
 
         std::cout << "ROB YAW: " << this->robot_yaw << ", PID error: " << error << std::endl;
@@ -116,49 +117,55 @@ void PathFollowing::odomCallback(const nav_msgs::msg::Odometry &odom)
     move();
 }
 
-PathFollowing::ProjectionData PathFollowing::nearest_projection_angle(const nav_msgs::msg::Path &path, Vec2f point)
+double PathFollowing::nearest_projection_angle(nav_msgs::msg::Path &path, Vec2f point)
 {
     double min_dist = std::numeric_limits<double>::max();
-    Vec2f closest_projection{0, 0};
-    size_t closest_segment = 0;
-    double best_xn = 0.0;
-    double best_phi_c = 0.0;
-
-    for (size_t i = 0; i < path.poses.size() - 1; ++i) {
-        Vec2f A(path.poses[i].pose.position.x, path.poses[i].pose.position.y);
-        Vec2f B(path.poses[i+1].pose.position.x, path.poses[i+1].pose.position.y);
-
-        Vec2f AB = B - A;
-        Vec2f AQ = point - A;
-        
-        double dist_aq = std::sqrt(std::pow(AQ.x, 2) + std::pow(AQ.y, 2));
-        //double t = (AQ.x * AB.x + AQ.y * AB.y) / ab_squared;
-        //t = std::max(0.0, std::min(1.0, t));
-
-        //Vec2f proj = A + AB * t;
-        double dist = (point - proj).norm();
-
-        // Unit tangent
-        double seg_len = std::sqrt(ab_squared);
-        double tx = (seg_len > 1e-9) ? AB.x / seg_len : 1.0;
-        double ty = (seg_len > 1e-9) ? AB.y / seg_len : 0.0;
-
-        // Unit normal (right-hand rule)
-        double nx = ty;
-        double ny = -tx;
-
-        Vec2f R_T = point - proj;
-        double x_n = R_T.x * nx + R_T.y * ny;
-        double phi_c = std::atan(-(this->k) * x_n);
-
-        if (dist < min_dist) {
+    int min_index;
+    std::cout << "HERE 1" << std::endl;
+    for(int i = 0; i < path.poses.size() - 1; i++){
+        double dist = std::sqrt(std::pow(point.x - path.poses[i].pose.position.x, 2) + std::pow(point.y - path.poses[i].pose.position.y, 2));
+        if (dist < min_dist){
             min_dist = dist;
-            closest_projection = proj;
-            closest_segment = i;
-            best_xn = x_n;
-            best_phi_c = phi_c;
+            min_index = i;
         }
     }
+    auto Xt = (Vec2f(path.poses[min_index].pose.position) - Vec2f(path.poses[min_index + 1].pose.position)).normalized();
+    auto Xn = (Vec2f(path.poses[min_index].pose.position) - point).rotated(-std::numbers::pi/2);
 
-    return ProjectionData{closest_segment, closest_projection, best_xn, best_phi_c};
+    auto xn = Xt.x * Xn.x + Xt.y * Xn.y;
+
+    double phi_c = std::atan(-xn);
+
+    return phi_c * 3.0;
 }
+
+
+/*
+    double ab_squared = std::sqrt(std::pow(AQ.x, 2) + std::pow(AQ.y, 2));
+    double t = (AQ.x * AB.x + AQ.y * AB.y) / ab_squared;
+    t = std::max(0.0, std::min(1.0, t));
+
+    Vec2f proj = A + AB * t;
+    double dist = (point - proj).norm();
+
+    // Unit tangent
+    double seg_len = std::sqrt(ab_squared);
+    double tx = (seg_len > 1e-9) ? AB.x / seg_len : 1.0;
+    double ty = (seg_len > 1e-9) ? AB.y / seg_len : 0.0;
+
+    // Unit normal (right-hand rule)
+    double nx = ty;
+    double ny = -tx;
+
+    Vec2f R_T = point - proj;
+    double x_n = R_T.x * nx + R_T.y * ny;
+    double phi_c = std::atan(-(this->k) * x_n);
+
+    if (dist < min_dist) {
+        min_dist = dist;
+        closest_projection = proj;
+        closest_segment = i;
+        best_xn = x_n;
+        best_phi_c = phi_c;
+    }
+*/

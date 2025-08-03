@@ -7,6 +7,7 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include "vec2.h"
 #include "pid.h"
+#include <math.h>
 
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/create_timer_ros.h>
@@ -32,6 +33,7 @@ class PathFollowing: public rclcpp::Node {
         ProjectionData nearest_projection_angle(const nav_msgs::msg::Path& path, Vec2f point);
         void odomCallback(const nav_msgs::msg::Odometry &odom);
         void goal_callback(const geometry_msgs::msg::PoseStamped &goal);
+        double nearest_projection_angle(nav_msgs::msg::Path &path, Vec2f point);
 
         void move();
 
@@ -47,6 +49,7 @@ class PathFollowing: public rclcpp::Node {
 
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_subscription;
 
+        nav_msgs::msg::Path processed_path;
 
         Vec2f curr_pos;
         double robot_yaw = 0.0;
@@ -60,6 +63,8 @@ class PathFollowing: public rclcpp::Node {
 
         std::shared_ptr<tf2_ros::Buffer> tf2Buffer;
         std::shared_ptr<tf2_ros::TransformListener> tf2Listener;
+
+        double closest_point_on_segment(Vec2f& a, Vec2f& b, Vec2f& p, Vec2f& proj);
 };
 
 #endif
