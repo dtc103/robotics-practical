@@ -18,6 +18,11 @@
 #include <tf2/utils.h>
 #include "write_plot_data.hpp"
 
+#include <sensor_msgs/msg/laser_scan.hpp>
+#include <message_filters/subscriber.h>
+#include <tf2_ros/message_filter.h>
+
+
 class PathFollowing: public rclcpp::Node {
     public:
 
@@ -61,6 +66,24 @@ class PathFollowing: public rclcpp::Node {
 
         bool has_init_pos = false;
         bool received_path = false;
+
+
+        // obstacle avoidance
+        std::vector<Vec2f> laserPoints;
+        bool laserInit{false};
+        bool obstacle_detected{false};
+        double length, width;
+
+        message_filters::Subscriber<sensor_msgs::msg::LaserScan> subLaser;
+        std::shared_ptr<tf2_ros::MessageFilter<sensor_msgs::msg::LaserScan>> tf2MessageFilter;
+
+        void laserCallback(const sensor_msgs::msg::LaserScan &scan);
+        void check_save_zone();
+
+
+
+
+
 
         PID controller;
 

@@ -2,19 +2,45 @@
 #include "path_processing.h"
 #include "plot_data.h"
 #include <cmath>
+#include <chrono>
+using namespace std::chrono_literals;
 
 using std::placeholders::_1;
 
 PathFollowing::PathFollowing(): Node("path_following"), data_writer_("/home/praktikum7/Desktop/jan/robotics-practical/exercise8/ros_ws/src/path_following/data/irl_data.txt") {
+    // Path-Following
     this->declare_parameter<double>("p_gain", 5.0);
     this->declare_parameter<double>("i_gain", 0.0);
     this->declare_parameter<double>("d_gain", 0.0);
     this->declare_parameter<double>("k_gain", 3.0);
 
+
+    // Save-Zone
+    this->declare_parameter<double>("length", 1.0);
+    this->declare_parameter<double>("width",  1.0);
+    length = this->get_parameter("length").as_double();
+    width  = this->get_parameter("width").as_double();
+
     this->move_cmd_pub = create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
     this->path_sub = this->create_subscription<nav_msgs::msg::Path>("/path", 10, std::bind(&PathFollowing::process_path, this, _1));
     this->processed_path_pub = this->create_publisher<nav_msgs::msg::Path>("/processed_path", 10);
     this->driven_path_pub = this->create_publisher<nav_msgs::msg::Path>("/driven_path", 10);
+
+
+
+    tf2Buffer = std::make_shared<tf2_ros::Buffer>(get_clock());
+    auto timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
+                            get_node_base_interface(), get_node_timers_interface());
+    tf2Buffer->setCreateTimerInterface(timer_interface);
+    tf2Listener = std::make_shared<tf2_ros::TransformListener>(*tf2Buffer);
+
+    subLaser.subscribe(this, "/scan");
+    tf2MessageFilter = std::make_shared<tf2_ros::MessageFilter<sensor_msgs::msg::LaserScan>>(
+                        subLaser, *tf2Buffer, "odom", 3,
+                        get_node_logging_interface(), get_node_clock_interface(), 100ms);
+    tf2MessageFilter->registerCallback(&PathFollowing::laserCallback, this);
+
+
 
     this->curr_pos = Vec2f(0.0, 0.0);
 
@@ -22,15 +48,6 @@ PathFollowing::PathFollowing(): Node("path_following"), data_writer_("/home/prak
         "/odom", 1,
         std::bind(&PathFollowing::odomCallback, this, std::placeholders::_1));
 
-    
-    tf2Buffer = std::make_shared<tf2_ros::Buffer>(get_clock());
-    // Create the timer interface before call to waitForTransform, to avoid a
-    // tf2_ros::CreateTimerInterfaceException exception
-    std::shared_ptr<tf2_ros::CreateTimerROS> timer_interface =
-        std::make_shared<tf2_ros::CreateTimerROS>(get_node_base_interface(),
-                                                  get_node_timers_interface());
-    tf2Buffer->setCreateTimerInterface(timer_interface);
-    tf2Listener = std::make_shared<tf2_ros::TransformListener>(*tf2Buffer);
 
     this->goal_subscription = this->create_subscription<geometry_msgs::msg::PoseStamped>("/goal_pose", 10, std::bind(&PathFollowing::goal_callback, this, _1));
 
@@ -43,6 +60,24 @@ PathFollowing::PathFollowing(): Node("path_following"), data_writer_("/home/prak
         0.0
     );
 }
+
+void PathFollowing::laserCallback(const sensor_msgs::msg::LaserScan &scan)
+{
+  laserPoints.clear();
+  for (size_t i = 0; i < scan.ranges.size(); ++i) {
+    auto r = scan.ranges[i];
+    if (std::isfinite(r) && r >= scan.range_min && r <= scan.range_max) {
+      // Punkt im Laser-Frame
+      Vec2f pLaser = Vec2f::fromAngle(scan.angle_min + i * scan.angle_increment) * r;
+      // transformiere in Odom-Frame
+      auto stamped = pLaser.toGeometryMsgPointStamped(scan.header);
+      auto pOdom = tf2Buffer->transform(stamped, "odom");
+      laserPoints.push_back(Vec2f(pOdom.point.x, pOdom.point.y));
+    }
+  }
+  laserInit = true;
+}
+
 
 void PathFollowing::goal_callback(const geometry_msgs::msg::PoseStamped &goal)
 {
@@ -63,13 +98,24 @@ void PathFollowing::process_path(const nav_msgs::msg::Path::SharedPtr msg){
 void PathFollowing::move() {
     geometry_msgs::msg::Twist twistMsg;
 
-    if (!this->received_path) {
+    if (!received_path || !laserInit || !has_init_pos) {
         // kein Pfad: stehen bleiben
         twistMsg.linear.x  = 0.0;
         twistMsg.angular.z = 0.0;
         move_cmd_pub->publish(twistMsg);
         return;
     }
+
+    check_save_zone();
+    if (obstacle_detected) {
+        // Hindernis erkannt → sofort stehen bleiben
+        twistMsg.linear.x  = 0.0;
+        twistMsg.angular.z = 0.0;
+        move_cmd_pub->publish(twistMsg);
+        std::cout << "Obstacle detected" << std::endl;
+        return;
+      }
+      
 
     double desired_yaw = 0.0;
     if (this->has_init_pos && !this->processed_path.poses.empty()) {
@@ -186,3 +232,18 @@ double PathFollowing::nearest_projection_angle(nav_msgs::msg::Path &path, Vec2f 
     return segment_yaw + phi_c;
 }
 
+void PathFollowing::check_save_zone()
+{
+  const double shift = 0.07;
+  obstacle_detected = false;
+  for (auto &p : laserPoints) {
+    // bringe Punkt in Roboter-Koordinaten
+    auto rel = (p - curr_pos).rotated(-robot_yaw);
+    if (rel.x > shift && rel.x < length + shift
+     && std::abs(rel.y) < width / 2.0)
+    {
+      obstacle_detected = true;
+      return;
+    }
+  }
+}
