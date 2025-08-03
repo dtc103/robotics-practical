@@ -60,6 +60,7 @@ class PathPlanning: public rclcpp::Node {
         std::vector<float> dist2_;
         
         
+        
         double min_clearance;
         double threshold;
         double inflation_radius_;

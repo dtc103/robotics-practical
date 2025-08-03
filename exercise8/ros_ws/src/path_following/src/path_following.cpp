@@ -5,7 +5,7 @@
 
 using std::placeholders::_1;
 
-PathFollowing::PathFollowing(): Node("path_following") {
+PathFollowing::PathFollowing(): Node("path_following"), data_writer_("/home/praktikum7/Desktop/jan/robotics-practical/exercise8/ros_ws/src/path_following/data/irl_data.txt") {
     this->declare_parameter<double>("p_gain", 5.0);
     this->declare_parameter<double>("i_gain", 0.0);
     this->declare_parameter<double>("d_gain", 0.0);
@@ -95,6 +95,8 @@ void PathFollowing::move() {
     twistMsg.linear.x  = v;
     twistMsg.angular.z = omega;
     move_cmd_pub->publish(twistMsg);
+
+    data_writer_.write(current_yaw, desired_yaw, error);
 
     std::cout 
       << "desired_yaw: " << desired_yaw 

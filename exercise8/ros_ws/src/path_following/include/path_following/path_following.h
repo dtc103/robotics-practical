@@ -16,6 +16,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <message_filters/subscriber.h>
 #include <tf2/utils.h>
+#include "write_plot_data.hpp"
 
 class PathFollowing: public rclcpp::Node {
     public:
@@ -50,6 +51,8 @@ class PathFollowing: public rclcpp::Node {
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_subscription;
 
         nav_msgs::msg::Path processed_path;
+
+        write_plot_data::PlotDataWriter data_writer_;
 
         Vec2f curr_pos;
         double robot_yaw = 0.0;
