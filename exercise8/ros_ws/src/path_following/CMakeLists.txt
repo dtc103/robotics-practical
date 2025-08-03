@@ -9,12 +9,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   #add_link_options(-fsanitize=address)
 endif()
 
-# set(ALGLIB_DIR "/home/praktikum7/install/alglib-cpp/src")
-
-# file(GLOB ALGLIB_SOURCES
-#   "${ALGLIB_DIR}/*.cpp"
-# )
-
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -27,10 +21,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(ALGLIB REQUIRED)
 
-include_directories(
-  include/${PROJECT_NAME}
-  ${ALGLIB_DIR}  
-)
+include_directories(include/${PROJECT_NAME})
 
 add_executable(path_following
   src/main.cpp
@@ -38,9 +29,7 @@ add_executable(path_following
   src/path_processing.cpp
   src/plot_data.cpp
   src/pid.cpp
-  ${ALGBLIB_DIR}
 )
-
 ament_target_dependencies(path_following rclcpp std_msgs geometry_msgs nav_msgs sensor_msgs tf2_ros tf2_geometry_msgs message_filters ALGLIB)
 target_link_libraries(path_following alglib)
 

@@ -41,6 +41,7 @@ class PathPlanning: public rclcpp::Node {
         double shapley_distance(int a, int b, int width);
         void odomCallback(const nav_msgs::msg::Odometry &odom);
         void goal_callback(const geometry_msgs::msg::PoseStamped &goal);
+        bool is_line_free_with_clearance(int start_idx, int goal_idx, const nav_msgs::msg::OccupancyGrid &grid, const std::vector<float> &dist2, double min_clearance, double resolution, int threshold);
         
         std::vector<float> computeDistanceMap();
 

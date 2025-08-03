@@ -100,6 +100,8 @@ class Vec2 {
             return std::acos(dotProduct(this->normalized(), b.normalized()));
         }*/
 
+        Vec2<T>& operator=(const Vec2<T>& other) = default;
+
         [[nodiscard]] Vec2<T> normalized() const requires std::is_floating_point_v<T> {
             return *this / this->norm();
         }

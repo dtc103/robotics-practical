@@ -3,32 +3,36 @@
 
 #include <rclcpp/rclcpp.hpp>
 
-class PID{
-    static const int MAX_INTEGRAL_VALUE = 10000;
-    
-    public:
-        PID();
-        PID(double, double, double, double);
+class PID {
+public:
+    PID();
+    PID(double p, double i, double d, double initial_set_point);
 
-        void set_p_gain(double);
-        void set_i_gain(double);
-        void set_d_gain(double);
-        
-        double update(double, unsigned long current_time);
-        
-        void new_set_point(double);
-        void reset();
+    void set_p_gain(double p);
+    void set_i_gain(double i);
+    void set_d_gain(double d);
 
-    private:
-        double prev_error;
-        double set_point;
-        double integral;
+    double update(double error, double dt);
 
-        double p_gain;
-        double i_gain;
-        double d_gain;
+    void new_set_point(double sp);
+    void reset();
 
-        unsigned long last_time_update = 0;
+private:
+    // PID-Parameter
+    double p_gain;
+    double i_gain;
+    double d_gain;
+
+    // interner Zustand
+    double prev_error{0.0};
+    double integral{0.0};
+    double set_point{0.0};
+
+    // Zeitstempel des letzten Updates (in Sekunden)
+    double last_time_update{0.0};
+
+    // Maximaler Betrag für den Integrator
+    static constexpr double MAX_INTEGRAL_VALUE = 1e4;
 };
 
-#endif
+#endif  // PID_H
