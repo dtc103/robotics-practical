@@ -8,6 +8,10 @@
 #include "vec2.h"
 #include "pid.h"
 #include <math.h>
+#include <cmath>
+#include <chrono>
+#include "path_processing.h"
+#include "plot_data.h"
 
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/create_timer_ros.h>
@@ -17,6 +21,7 @@
 #include <message_filters/subscriber.h>
 #include <tf2/utils.h>
 #include "write_plot_data.hpp"
+#include <std_msgs/msg/bool.hpp>
 
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <message_filters/subscriber.h>
@@ -45,52 +50,79 @@ class PathFollowing: public rclcpp::Node {
 
 
     private:
+        // subscriber
         rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub;
-        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr processed_path_pub;
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subOdom;
-        rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr move_cmd_pub;
-
-        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr driven_path_pub;
-        nav_msgs::msg::Path driven_path;
-
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_subscription;
+        rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr bumper_sub_;
 
+        // publisher
+        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr processed_path_pub;
+        rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr move_cmd_pub;
+        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr driven_path_pub;
+
+        // path
+        nav_msgs::msg::Path driven_path;
         nav_msgs::msg::Path processed_path;
 
         write_plot_data::PlotDataWriter data_writer_;
 
+
+
+        // basics
         Vec2f curr_pos;
         double robot_yaw = 0.0;
-
-        double k = 1.0;
 
         bool has_init_pos = false;
         bool received_path = false;
 
+        PID controller;
+        double closest_point_on_segment(Vec2f& a, Vec2f& b, Vec2f& p, Vec2f& proj);
+        std::shared_ptr<tf2_ros::Buffer> tf2Buffer;
+        std::shared_ptr<tf2_ros::TransformListener> tf2Listener;
 
-        // obstacle avoidance
+        // laser
         std::vector<Vec2f> laserPoints;
-        bool laserInit{false};
-        bool obstacle_detected{false};
-        double length, width;
-
+        bool laserInit_ = false;
         message_filters::Subscriber<sensor_msgs::msg::LaserScan> subLaser;
         std::shared_ptr<tf2_ros::MessageFilter<sensor_msgs::msg::LaserScan>> tf2MessageFilter;
 
         void laserCallback(const sensor_msgs::msg::LaserScan &scan);
+
+
+        // path following
+        double p_gain_, i_gain_, d_gain_, k_gain_;
+
+
+        // obstacle avoidance
+        rclcpp::Time state_start_time_;
+        rclcpp::Time rotate_start_time_;
+
+        // drive modes
+        enum class State { NORMAL, REVERSING, ROTATING };
+        State state_ = State::NORMAL;
+
+        double reverse_duration_;
+      
+        bool obstacle_detected_ = false;
+        bool   rotating_ = false;
+
+        double length_, width_;
+        int    min_obstacle_points_;   
+        double near_deadband_;         
+        int    consecutive_hits_;      
+        int    consecutive_misses_;   
+        double omega_avoid_;
+        double omega_max_;
+        double rotate_duration_;
+
         void check_save_zone();
 
 
-
-
-
-
-        PID controller;
-
-        std::shared_ptr<tf2_ros::Buffer> tf2Buffer;
-        std::shared_ptr<tf2_ros::TransformListener> tf2Listener;
-
-        double closest_point_on_segment(Vec2f& a, Vec2f& b, Vec2f& p, Vec2f& proj);
+        // velocity & accceleration
+        double v_max_, omega_slow_;
+        double prev_v_ = 0.0;
+        double a_max_; 
 };
 
 #endif

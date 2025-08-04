@@ -8,7 +8,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("inflation_radius", default_value="1.0", description=""),
-            DeclareLaunchArgument("sigma", default_value="0.15", description=""),
+            DeclareLaunchArgument("sigma", default_value="0.12", description=""),
             DeclareLaunchArgument("threshold", default_value="51.0", description=""),
             DeclareLaunchArgument("min_clearance", default_value="0.3", description=""),
             DeclareLaunchArgument("use_sim_time", default_value="true", description=""),

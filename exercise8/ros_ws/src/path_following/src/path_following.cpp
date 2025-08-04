@@ -1,32 +1,46 @@
 #include "path_following.h"
-#include "path_processing.h"
-#include "plot_data.h"
-#include <cmath>
-#include <chrono>
+
+
 using namespace std::chrono_literals;
 
 using std::placeholders::_1;
 
 PathFollowing::PathFollowing(): Node("path_following"), data_writer_("/home/praktikum7/Desktop/jan/robotics-practical/exercise8/ros_ws/src/path_following/data/irl_data.txt") {
     // Path-Following
-    this->declare_parameter<double>("p_gain", 5.0);
-    this->declare_parameter<double>("i_gain", 0.0);
-    this->declare_parameter<double>("d_gain", 0.0);
-    this->declare_parameter<double>("k_gain", 3.0);
+    p_gain_ = this->declare_parameter<double>("p_gain", 5.0);
+    i_gain_ = this->declare_parameter<double>("i_gain", 0.0);
+    d_gain_ = this->declare_parameter<double>("d_gain", 0.0);
+    k_gain_ = this->declare_parameter<double>("k_gain", 3.0);
 
 
-    // Save-Zone
-    this->declare_parameter<double>("length", 1.0);
-    this->declare_parameter<double>("width",  1.0);
-    length = this->get_parameter("length").as_double();
-    width  = this->get_parameter("width").as_double();
+    // Obstacle Avoidance
+    length_ = this->declare_parameter<double>("length", 1.0);
+    width_ = this->declare_parameter<double>("width",  1.0);
+    near_deadband_ = this->declare_parameter<double>("near_deadband", 0.10);
+    min_obstacle_points_ = this->declare_parameter<int>   ("min_obstacle_points", 5);
+    rotate_duration_ = this->declare_parameter<double>("rotate_duration", 1.5);
+    reverse_duration_ = this->declare_parameter<double>("reverse_duration", 0.5);
+    omega_avoid_ = this->declare_parameter<double>("omega_avoid", 0.5);
+    omega_max_ = this->declare_parameter<double>("omega_max", 1.0);
 
+    state_start_time_    = this->now();
+    state_              = State::NORMAL;
+    consecutive_hits_ = consecutive_misses_ = 0;
+
+    // Velocity & Acceleration
+    v_max_ = this->declare_parameter<double>("v_max", 0.6);
+    omega_slow_ = this->declare_parameter<double>("omega_slow",  1.0);
+    a_max_ = this->declare_parameter<double>("a_max", 0.2);
+  
+
+    // publisher
     this->move_cmd_pub = create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
-    this->path_sub = this->create_subscription<nav_msgs::msg::Path>("/path", 10, std::bind(&PathFollowing::process_path, this, _1));
     this->processed_path_pub = this->create_publisher<nav_msgs::msg::Path>("/processed_path", 10);
     this->driven_path_pub = this->create_publisher<nav_msgs::msg::Path>("/driven_path", 10);
 
-
+    // subscriber 
+    this->path_sub = this->create_subscription<nav_msgs::msg::Path>("/path", 10, std::bind(&PathFollowing::process_path, this, _1));
+    this->goal_subscription = this->create_subscription<geometry_msgs::msg::PoseStamped>("/goal_pose", 10, std::bind(&PathFollowing::goal_callback, this, _1));
 
     tf2Buffer = std::make_shared<tf2_ros::Buffer>(get_clock());
     auto timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
@@ -48,15 +62,12 @@ PathFollowing::PathFollowing(): Node("path_following"), data_writer_("/home/prak
         "/odom", 1,
         std::bind(&PathFollowing::odomCallback, this, std::placeholders::_1));
 
-
-    this->goal_subscription = this->create_subscription<geometry_msgs::msg::PoseStamped>("/goal_pose", 10, std::bind(&PathFollowing::goal_callback, this, _1));
-
     this->driven_path.header.frame_id = "odom";
 
     this->controller = PID(
-        this->get_parameter("p_gain").as_double(), 
-        this->get_parameter("i_gain").as_double(),
-        this->get_parameter("d_gain").as_double(),
+        p_gain_,
+        i_gain_,
+        d_gain_,
         0.0
     );
 }
@@ -67,15 +78,15 @@ void PathFollowing::laserCallback(const sensor_msgs::msg::LaserScan &scan)
   for (size_t i = 0; i < scan.ranges.size(); ++i) {
     auto r = scan.ranges[i];
     if (std::isfinite(r) && r >= scan.range_min && r <= scan.range_max) {
-      // Punkt im Laser-Frame
+      // points in laser frame
       Vec2f pLaser = Vec2f::fromAngle(scan.angle_min + i * scan.angle_increment) * r;
-      // transformiere in Odom-Frame
+      // transform in odom frame
       auto stamped = pLaser.toGeometryMsgPointStamped(scan.header);
       auto pOdom = tf2Buffer->transform(stamped, "odom");
       laserPoints.push_back(Vec2f(pOdom.point.x, pOdom.point.y));
     }
   }
-  laserInit = true;
+  laserInit_ = true;
 }
 
 
@@ -88,33 +99,78 @@ void PathFollowing::goal_callback(const geometry_msgs::msg::PoseStamped &goal)
 
 void PathFollowing::process_path(const nav_msgs::msg::Path::SharedPtr msg){
     this->processed_path = processPath(*msg);
+    if(msg->poses.size() > 0){
+      this->processed_path_pub->publish(this->processed_path);
 
-    this->processed_path_pub->publish(this->processed_path);
-
-
-    this->received_path = true;
+      this->received_path = true;
+    }
+    else{
+      this->received_path = false;
+    }
 }
 
 void PathFollowing::move() {
     geometry_msgs::msg::Twist twistMsg;
 
-    if (!received_path || !laserInit || !has_init_pos) {
-        // kein Pfad: stehen bleiben
+    if (!received_path || !laserInit_ || !has_init_pos) {
+        // no path was found 
+        // TODO
         twistMsg.linear.x  = 0.0;
         twistMsg.angular.z = 0.0;
         move_cmd_pub->publish(twistMsg);
         return;
     }
 
+    // check save zone only in normal drive mode
     check_save_zone();
-    if (obstacle_detected) {
-        // Hindernis erkannt → sofort stehen bleiben
-        twistMsg.linear.x  = 0.0;
-        twistMsg.angular.z = 0.0;
+    if (consecutive_hits_ >= 2) {
+      state_ = State::REVERSING;
+      state_start_time_ = now();
+      twistMsg.linear.x = -0.2;
+      twistMsg.angular.z = 0.0;
+      move_cmd_pub->publish(twistMsg);
+      return;
+    }
+
+    // Normal -> Obstacle detected -> Reverse -> Rotating -> Normal
+    switch(state_) {
+      case State::REVERSING: {
+        double elapsed = (now() - state_start_time_).seconds();
+        if (elapsed < reverse_duration_) {
+          // reversing speed
+          twistMsg.linear.x = -0.2;      
+          twistMsg.angular.z = 0.0;
+        } else {
+          // reverse is finished, now rotate
+          state_ = State::ROTATING;
+          state_start_time_ = now();
+          twistMsg.linear.x = 0.0;
+          twistMsg.angular.z = omega_avoid_;
+        }
         move_cmd_pub->publish(twistMsg);
-        std::cout << "Obstacle detected" << std::endl;
         return;
       }
+  
+      case State::ROTATING: {
+        double elapsed = (now() - state_start_time_).seconds();
+        if (elapsed < rotate_duration_) {
+          twistMsg.linear.x = 0.0;
+          twistMsg.angular.z = omega_avoid_;
+        } else {
+          // rotation was finished, return in normal drive mode
+          state_ = State::NORMAL;
+          // reset counters s.t. next obstacle avoidance can begin again
+          consecutive_hits_ = consecutive_misses_ = 0;
+          twistMsg.linear.x = twistMsg.angular.z = 0.0;
+        }
+        move_cmd_pub->publish(twistMsg);
+        return;
+      }
+  
+      case State::NORMAL:
+      default:
+        break;
+    }
       
 
     double desired_yaw = 0.0;
@@ -133,17 +189,31 @@ void PathFollowing::move() {
     double dt = t - last_t;
     last_t     = t;
 
-    // Drehgeschwindigkeit
-    double omega = this->controller.update(error, dt);
+    // rotation velocity
+    double omega = controller.update(error, dt);
+    omega = std::clamp(omega, -omega_max_, omega_max_);
 
-    double v = 0.4 * std::max(1.0 - std::abs(error)/M_PI, 0.0);
+    double omega_abs = std::abs(omega);
+    double x = std::min(omega_abs / omega_slow_, 1.0);
+    double factor = 0.5 * (1.0 + std::cos(M_PI * x));
+
+    double v_d = v_max_ * factor;
+
+    // limit acceleration
+    double dv_max = a_max_ * dt;
+    double dv = std::clamp(v_d - prev_v_, -dv_max, dv_max);
+
+    double v = prev_v_ + dv;
+    prev_v_ = v;
 
     twistMsg.linear.x  = v;
     twistMsg.angular.z = omega;
     move_cmd_pub->publish(twistMsg);
 
+    // record data
     data_writer_.write(current_yaw, desired_yaw, error);
 
+    /*
     std::cout 
       << "desired_yaw: " << desired_yaw 
       << "  current_yaw: " << current_yaw 
@@ -152,6 +222,7 @@ void PathFollowing::move() {
       << "  omega: " << omega 
       << "  v: " << v 
       << std::endl;
+      */
 }
 
 
@@ -226,24 +297,46 @@ double PathFollowing::nearest_projection_angle(nav_msgs::msg::Path &path, Vec2f 
     double x_n = (point - P).x * normal.x + (point - P).y * normal.y;
 
     // stanley-correction
-    double k = this->get_parameter("k_gain").as_double();
-    double phi_c = std::atan(-k * x_n);
+    double phi_c = std::atan(-k_gain_ * x_n);
 
     return segment_yaw + phi_c;
 }
 
+
 void PathFollowing::check_save_zone()
 {
-  const double shift = 0.07;
-  obstacle_detected = false;
+  // < deadband is ignored (propably reflection on the ground)
+  const double far_limit = length_ + near_deadband_;
+  int count = 0;
+
   for (auto &p : laserPoints) {
-    // bringe Punkt in Roboter-Koordinaten
     auto rel = (p - curr_pos).rotated(-robot_yaw);
-    if (rel.x > shift && rel.x < length + shift
-     && std::abs(rel.y) < width / 2.0)
+
+    // count points in danger rectangel [near_deadband_, near_deadband_+length_] × [–width_/2, width_/2]
+    if (rel.x > near_deadband_ 
+     && rel.x <  far_limit
+     && std::abs(rel.y) < width_/2.0)
     {
-      obstacle_detected = true;
-      return;
+      ++count;
     }
   }
+
+  // enough points -> Hit, else Miss
+  if (count >= min_obstacle_points_) {
+    ++consecutive_hits_;
+    consecutive_misses_ = 0;
+  } else {
+    ++consecutive_misses_;
+    consecutive_hits_  = 0;
+  }
+
+  // 2 Hit -> stop
+  if (consecutive_hits_ >= 2) {
+    obstacle_detected_ = true;
+  }
+  // 2 Miss -> continue
+  else if (consecutive_misses_ >= 2) {
+    obstacle_detected_ = false;
+  }
 }
+

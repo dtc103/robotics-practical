@@ -201,7 +201,7 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
                 continue;
 
             // gap to small
-            if (dist2_[nidx] < min_clearance_cells) {
+            if (dist2_[nidx] < min_clearance_cells / 2) {
                 std::cout << dist2_[nidx] << std::endl;
                 std::cout << "Gap to small" << std::endl;
                 continue;
@@ -215,8 +215,8 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
                     continue;
                 }
 
-            // skip occupied cells    
-            if (this->grid.data[nidx] > this->threshold)
+            // skip occupied cells or unknown cells  
+            if (this->grid.data[nidx] > this->threshold || grid.data[nidx] == 50)
                 continue; 
              
             
@@ -370,11 +370,14 @@ std::vector<float> PathPlanning::computeDistanceMap() {
     // 2) Multi-source Dijkstra up to radius
     const int dirs[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
     while (!pq.empty()) {
-        auto [d2, idx] = pq.top(); pq.pop();
+        auto [d2, idx] = pq.top();
+        pq.pop();
         if (d2 > dist2[idx] || d2 > rad2) continue;
-        int x = idx % w, y = idx / w;
+        int x = idx % w;
+        int y = idx / w;
         for (auto &d : dirs) {
-            int nx = x + d[0], ny = y + d[1];
+            int nx = x + d[0];
+            int ny = y + d[1];
             if (nx<0||nx>=w||ny<0||ny>=h) continue;
             int ni = ny*w + nx;
             float step2 = (std::abs(d[0])+std::abs(d[1])==2 ? std::sqrt(2.0) : 1.0);
@@ -388,38 +391,3 @@ std::vector<float> PathPlanning::computeDistanceMap() {
     return dist2;
 }
 
-
-
-
-bool PathPlanning::is_line_free_with_clearance(int start_idx, int goal_idx,
-    const nav_msgs::msg::OccupancyGrid &grid,
-    const std::vector<float> &dist2, 
-    double min_clearance, double resolution,
-    int threshold)
-{
-int w = grid.info.width;
-
-int x0 = start_idx % w;
-int y0 = start_idx / w;
-int x1 = goal_idx % w;
-int y1 = goal_idx / w;
-
-int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-int err = dx + dy;
-
-double min_clearance_cells = min_clearance / resolution;
-
-while (true) {
-int idx = y0 * w + x0;
-if (idx >= 0 && idx < static_cast<int>(grid.data.size())) {
-if (grid.data[idx] > threshold) return false;          // direkte Belegung
-if (dist2[idx] < min_clearance_cells) return false;   // Clearance verletzt
-}
-if (x0 == x1 && y0 == y1) break;
-int e2 = 2 * err;
-if (e2 >= dy) { err += dy; x0 += sx; }
-if (e2 <= dx) { err += dx; y0 += sy; }
-}
-return true;
-}
