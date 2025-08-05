@@ -5,7 +5,7 @@ using namespace std::chrono_literals;
 
 using std::placeholders::_1;
 
-PathFollowing::PathFollowing(): Node("path_following"), data_writer_("/home/praktikum7/Desktop/jan/robotics-practical/exercise8/ros_ws/src/path_following/data/irl_data.txt") {
+PathFollowing::PathFollowing(): Node("path_following"), data_writer_("/home/praktikum7/Desktop/backup/robotics-practical/exercise8/ros_ws/src/path_following/data/irl_data.txt") {
     // Path-Following
     p_gain_ = this->declare_parameter<double>("p_gain", 5.0);
     i_gain_ = this->declare_parameter<double>("i_gain", 0.0);
@@ -292,9 +292,19 @@ void PathFollowing::handleReversing() {
 void PathFollowing::handleRotating() {
   double elapsed = (now() - state_start_time_).seconds();
   geometry_msgs::msg::Twist twist;
-  if (elapsed < rotate_duration_) {
-      twist.angular.z = omega_avoid_;
-  } else {
+
+  // stop any movement
+  twist.linear.x = 0.0;
+
+  // first half of rotate_duration_ -> rotate left 
+  if (elapsed < 0.5 * rotate_duration_) {
+    twist.angular.z =  omega_avoid_;
+  }
+  // second half of rotate_duration_ -> rotate right 
+  else if (elapsed < 1.3 * rotate_duration_) {
+    twist.angular.z = -omega_avoid_;
+  }
+  else {
       state_ = State::NORMAL;
       consecutive_hits_ = consecutive_misses_ = 0;
       twist = geometry_msgs::msg::Twist();  // Stop drehen

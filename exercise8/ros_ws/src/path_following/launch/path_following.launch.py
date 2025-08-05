@@ -17,14 +17,14 @@ def generate_launch_description():
             DeclareLaunchArgument("near_deadband", default_value="0.2", description="Distance from robot that is ignored for obstacle avoidance."),
             DeclareLaunchArgument("min_obstacle_points", default_value="2", description="Minimum of consecutive hits necessary to detect obstacle."),
             DeclareLaunchArgument("omega_avoid", default_value="0.5", description="Angel velocity with which the robot scans environment when obstacle detected."),
-            DeclareLaunchArgument("omega_max", default_value="2.0", description="Max. Angel velocity."),
             DeclareLaunchArgument("rotate_duration", default_value="2.5", description="Duration of rotation (angel = omega_avoid x rotate_duration)."),
             DeclareLaunchArgument("reverse_duration", default_value="1.5", description="Duration of backing up when obstacle detected."),
 
             
-            DeclareLaunchArgument("v_max", default_value="1.0", description="Max. velocity."),
-            DeclareLaunchArgument("a_max", default_value="0.3", description="Max. acceleration"),
-            DeclareLaunchArgument("omega_slow", default_value="1.0", description="Angular velocity threshold at which forward speed scales down to zero."),
+            DeclareLaunchArgument("v_max", default_value="0.75", description="Max. velocity."),
+            DeclareLaunchArgument("a_max", default_value="0.25", description="Max. acceleration"),
+            DeclareLaunchArgument("omega_max", default_value="2.0", description="Max. Angel velocity."),
+            DeclareLaunchArgument("omega_slow", default_value="0.85", description="Angular velocity threshold at which forward speed scales down to zero."),
             DeclareLaunchArgument("decel_distance", default_value="1.0", description="Distance to goal at which the robot starts decelerating."),
             
             DeclareLaunchArgument("use_sim_time", default_value="true", description="simulation time"),
