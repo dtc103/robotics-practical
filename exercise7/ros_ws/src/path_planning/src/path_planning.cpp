@@ -58,7 +58,7 @@ void PathPlanning::goal_callback(const geometry_msgs::msg::PoseStamped &goal)
 }
 
 void PathPlanning::grid_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg){
-    std::cout << "GRID CALLBACK" << std::endl;
+    //std::cout << "GRID CALLBACK" << std::endl;
 
     this->grid = *msg;
 
@@ -107,33 +107,6 @@ void PathPlanning::create_cost_map(){
 void PathPlanning::plan_route(Vec2f start, Vec2f goal){
     int start_idx = get_grid_index(start);
     int goal_idx = get_grid_index(goal);
-
-
-    /*
-    Vec2f ws = gridIndexToWorld(start_idx);
-    Vec2f wg = gridIndexToWorld(goal_idx);
-    // Early exit when free line
-    if (is_line_free_with_clearance(start_idx, goal_idx, this->grid, dist2_, min_clearance, this->grid.info.resolution, threshold)) {
-        constexpr int N = 4;  // Anzahl der Spline-Punkte (Muss ≥ 4 sein)
-        std::vector<geometry_msgs::msg::PoseStamped> world_coords;
-        world_coords.reserve(N);
-    
-        for (int i = 0; i < N; ++i) {
-            double alpha = static_cast<double>(i) / (N - 1);  // 0, 1/3, 2/3, 1
-            geometry_msgs::msg::PoseStamped p;
-            p.pose.position.x = ws.x + alpha * (wg.x - ws.x);
-            p.pose.position.y = ws.y + alpha * (wg.y - ws.y);
-            world_coords.push_back(p);
-        }
-    
-        this->path.poses = world_coords;
-        std::cout << "Early exit with " << N << " spline points" << std::endl;
-        return;
-    }
-    */
-    
-    
-
 
     auto path = astar(start_idx, goal_idx, this->grid.info.width, this->grid.info.height);
     std::vector<geometry_msgs::msg::PoseStamped> world_coords;
@@ -202,8 +175,7 @@ std::vector<int> PathPlanning::astar(int start, int goal, int width, int height)
 
             // gap to small
             if (dist2_[nidx] < min_clearance_cells / 2) {
-                std::cout << dist2_[nidx] << std::endl;
-                std::cout << "Gap to small" << std::endl;
+                //std::cout << dist2_[nidx] << std::endl;
                 continue;
             }
             

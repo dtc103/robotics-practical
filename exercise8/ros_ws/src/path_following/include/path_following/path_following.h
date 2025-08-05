@@ -118,11 +118,24 @@ class PathFollowing: public rclcpp::Node {
 
         void check_save_zone();
 
+        bool shouldStartAvoidance() const;
+        void startReversing();
+        void handleReversing();
+        void handleRotating();
+        void handleNormalDriving();
+
+        double computeDeltaTime();
+        double computeRotationalVelocity(double error, double dt);
+        double computeLinearVelocity(double omega, double dt);
+        void applyDeceleration(double &v);
+
 
         // velocity & accceleration
-        double v_max_, omega_slow_;
+        double v_max_, a_max_;
+        double omega_slow_; 
+        double decel_distance_;
+
         double prev_v_ = 0.0;
-        double a_max_; 
 };
 
 #endif

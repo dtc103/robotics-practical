@@ -46,8 +46,8 @@ Mapping::Mapping(): Node("mapping") {
     this->cell_log_odds.assign(grid_width * grid_height, l0);
     this->grid.data.assign(grid.info.height * grid.info.width, 50);
 
-    std::cout << this->grid.info.origin.position.x << " " << this->grid.info.origin.position.y << " " << this->grid.info.origin.position.z << std::endl;
-    std::cout << this->grid.info.origin.orientation.w << " " << this->grid.info.origin.orientation.x << " " << this->grid.info.origin.orientation.y << " " << this->grid.info.origin.orientation.z << std::endl;
+    //std::cout << this->grid.info.origin.position.x << " " << this->grid.info.origin.position.y << " " << this->grid.info.origin.position.z << std::endl;
+    //std::cout << this->grid.info.origin.orientation.w << " " << this->grid.info.origin.orientation.x << " " << this->grid.info.origin.orientation.y << " " << this->grid.info.origin.orientation.z << std::endl;
 
     gridPublisher = create_publisher<nav_msgs::msg::OccupancyGrid>("/grid", 1);
 
@@ -158,7 +158,7 @@ void Mapping::odomCallback(const nav_msgs::msg::Odometry &odom)
 void Mapping::laserCallback(const sensor_msgs::msg::LaserScan &scan) {
     std::lock_guard<std::mutex> guard(mutex);
 
-    std::cout << "LASER" << std::endl;
+    //std::cout << "LASER" << std::endl;
 
     // Improve performance slightly by only looking up the first and last transformation.
     // The intermediate transformations can be computed by using a spherical linear interpolation.

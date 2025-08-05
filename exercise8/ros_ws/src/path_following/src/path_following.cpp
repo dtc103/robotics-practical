@@ -29,8 +29,9 @@ PathFollowing::PathFollowing(): Node("path_following"), data_writer_("/home/prak
 
     // Velocity & Acceleration
     v_max_ = this->declare_parameter<double>("v_max", 0.6);
-    omega_slow_ = this->declare_parameter<double>("omega_slow",  1.0);
     a_max_ = this->declare_parameter<double>("a_max", 0.2);
+    omega_slow_ = this->declare_parameter<double>("omega_slow",  1.0);
+    decel_distance_ = this->declare_parameter<double>("decel_distance", 0.5);
   
 
     // publisher
@@ -123,106 +124,28 @@ void PathFollowing::move() {
 
     // check save zone only in normal drive mode
     check_save_zone();
-    if (consecutive_hits_ >= 2) {
-      state_ = State::REVERSING;
-      state_start_time_ = now();
-      twistMsg.linear.x = -0.2;
-      twistMsg.angular.z = 0.0;
-      move_cmd_pub->publish(twistMsg);
+    if (shouldStartAvoidance()) {
+      startReversing();
       return;
     }
 
     // Normal -> Obstacle detected -> Reverse -> Rotating -> Normal
     switch(state_) {
       case State::REVERSING: {
-        double elapsed = (now() - state_start_time_).seconds();
-        if (elapsed < reverse_duration_) {
-          // reversing speed
-          twistMsg.linear.x = -0.2;      
-          twistMsg.angular.z = 0.0;
-        } else {
-          // reverse is finished, now rotate
-          state_ = State::ROTATING;
-          state_start_time_ = now();
-          twistMsg.linear.x = 0.0;
-          twistMsg.angular.z = omega_avoid_;
-        }
-        move_cmd_pub->publish(twistMsg);
+        handleReversing();
         return;
       }
   
       case State::ROTATING: {
-        double elapsed = (now() - state_start_time_).seconds();
-        if (elapsed < rotate_duration_) {
-          twistMsg.linear.x = 0.0;
-          twistMsg.angular.z = omega_avoid_;
-        } else {
-          // rotation was finished, return in normal drive mode
-          state_ = State::NORMAL;
-          // reset counters s.t. next obstacle avoidance can begin again
-          consecutive_hits_ = consecutive_misses_ = 0;
-          twistMsg.linear.x = twistMsg.angular.z = 0.0;
-        }
-        move_cmd_pub->publish(twistMsg);
+        handleRotating();
         return;
       }
   
       case State::NORMAL:
       default:
-        break;
+        handleNormalDriving();
+        return;
     }
-      
-
-    double desired_yaw = 0.0;
-    if (this->has_init_pos && !this->processed_path.poses.empty()) {
-        desired_yaw = nearest_projection_angle(this->processed_path, this->curr_pos);
-        this->controller.new_set_point(desired_yaw);
-    }
-
-    double current_yaw = this->robot_yaw;
-
-    // Winkel-Fehler in [–π, π] normalisieren
-    double error = std::remainder(desired_yaw - current_yaw, 2.0 * M_PI);
-
-    static double last_t = this->now().seconds();
-    double t  = this->now().seconds();
-    double dt = t - last_t;
-    last_t     = t;
-
-    // rotation velocity
-    double omega = controller.update(error, dt);
-    omega = std::clamp(omega, -omega_max_, omega_max_);
-
-    double omega_abs = std::abs(omega);
-    double x = std::min(omega_abs / omega_slow_, 1.0);
-    double factor = 0.5 * (1.0 + std::cos(M_PI * x));
-
-    double v_d = v_max_ * factor;
-
-    // limit acceleration
-    double dv_max = a_max_ * dt;
-    double dv = std::clamp(v_d - prev_v_, -dv_max, dv_max);
-
-    double v = prev_v_ + dv;
-    prev_v_ = v;
-
-    twistMsg.linear.x  = v;
-    twistMsg.angular.z = omega;
-    move_cmd_pub->publish(twistMsg);
-
-    // record data
-    data_writer_.write(current_yaw, desired_yaw, error);
-
-    /*
-    std::cout 
-      << "desired_yaw: " << desired_yaw 
-      << "  current_yaw: " << current_yaw 
-      << "  error: " << error 
-      << "  dt: " << dt 
-      << "  omega: " << omega 
-      << "  v: " << v 
-      << std::endl;
-      */
 }
 
 
@@ -340,3 +263,119 @@ void PathFollowing::check_save_zone()
   }
 }
 
+bool PathFollowing::shouldStartAvoidance() const {
+  return consecutive_hits_ >= 2;
+}
+
+void PathFollowing::startReversing() {
+  state_ = State::REVERSING;
+  state_start_time_ = now();
+  geometry_msgs::msg::Twist twist;
+  twist.linear.x = -0.2;
+  move_cmd_pub->publish(twist);
+}
+
+void PathFollowing::handleReversing() {
+  double elapsed = (now() - state_start_time_).seconds();
+  geometry_msgs::msg::Twist twist;
+  if (elapsed < reverse_duration_) {
+      twist.linear.x = -0.2;
+  } else {
+      state_ = State::ROTATING;
+      state_start_time_ = now();
+      twist.angular.z = omega_avoid_;
+  }
+  move_cmd_pub->publish(twist);
+}
+
+
+void PathFollowing::handleRotating() {
+  double elapsed = (now() - state_start_time_).seconds();
+  geometry_msgs::msg::Twist twist;
+  if (elapsed < rotate_duration_) {
+      twist.angular.z = omega_avoid_;
+  } else {
+      state_ = State::NORMAL;
+      consecutive_hits_ = consecutive_misses_ = 0;
+      twist = geometry_msgs::msg::Twist();  // Stop drehen
+  }
+  move_cmd_pub->publish(twist);
+}
+
+
+void PathFollowing::applyDeceleration(double &v) {
+  const auto &end = processed_path.poses.back().pose.position;
+  double dx = end.x - curr_pos.x;
+  double dy = end.y - curr_pos.y;
+  double dist = std::hypot(dx, dy);
+
+  if (dist < decel_distance_) {
+      double v_lim = std::sqrt(2.0 * a_max_ * dist);
+      v = std::min(v, v_lim);
+  }
+  if (dist < 0.05) {
+      v = 0.0;
+  }
+}
+
+
+double PathFollowing::computeDeltaTime() {
+  static double last_t = now().seconds();
+    double now_s = now().seconds();
+    double dt  = now_s - last_t;
+    last_t = now_s;
+    return dt;
+}
+
+
+
+double PathFollowing::computeRotationalVelocity(double error, double dt) {
+  double raw = controller.update(error, dt);
+  return std::clamp(raw, -omega_max_, omega_max_);
+}
+
+double PathFollowing::computeLinearVelocity(double omega, double dt) {
+  double abs_w = std::abs(omega);
+  double x = std::min(abs_w / omega_slow_, 1.0);
+  double factor = 0.5 * (1.0 + std::cos(M_PI * x));
+  double v_des = v_max_ * factor;
+  
+  // limit acceleration
+  double dv_max = a_max_ * dt;
+  double dv = std::clamp(v_des - prev_v_, -dv_max, dv_max);
+  prev_v_ += dv;
+  return prev_v_;
+}
+
+
+void PathFollowing::handleNormalDriving() {
+  double desired_yaw = 0.0;
+    if (this->has_init_pos && !this->processed_path.poses.empty()) {
+        desired_yaw = nearest_projection_angle(this->processed_path, this->curr_pos);
+        this->controller.new_set_point(desired_yaw);
+    }
+
+    double current_yaw = this->robot_yaw;
+
+    // angle error in normalized in [–pi, pi]
+    double error = std::remainder(desired_yaw - current_yaw, 2.0 * M_PI);
+
+    // compute time since last iteration
+    double dt = computeDeltaTime();
+
+    // compute rotational and linear velocities (omega, v)
+    double omega = computeRotationalVelocity(error, dt);
+    double v = computeLinearVelocity(omega, dt);
+
+    // smooth stopping if distance to goal < decel_distance
+    applyDeceleration(v);
+
+    // publish calculated velocities
+    geometry_msgs::msg::Twist twistMsg;
+    twistMsg.linear.x  = v;
+    twistMsg.angular.z = omega;
+    move_cmd_pub->publish(twistMsg);
+
+    // record data
+    data_writer_.write(current_yaw, desired_yaw, error);
+}

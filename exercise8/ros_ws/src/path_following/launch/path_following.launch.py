@@ -21,11 +21,12 @@ def generate_launch_description():
             DeclareLaunchArgument("rotate_duration", default_value="2.5", description="Duration of rotation (angel = omega_avoid x rotate_duration)."),
             DeclareLaunchArgument("reverse_duration", default_value="1.5", description="Duration of backing up when obstacle detected."),
 
-
-
+            
             DeclareLaunchArgument("v_max", default_value="1.0", description="Max. velocity."),
-            DeclareLaunchArgument("omega_slow", default_value="1.0", description="Angular velocity threshold at which forward speed scales down to zero."),
             DeclareLaunchArgument("a_max", default_value="0.3", description="Max. acceleration"),
+            DeclareLaunchArgument("omega_slow", default_value="1.0", description="Angular velocity threshold at which forward speed scales down to zero."),
+            DeclareLaunchArgument("decel_distance", default_value="1.0", description="Distance to goal at which the robot starts decelerating."),
+            
             DeclareLaunchArgument("use_sim_time", default_value="true", description="simulation time"),
             Node(
                 package="path_following",
@@ -47,6 +48,7 @@ def generate_launch_description():
                     {"omega_max":LaunchConfiguration("omega_max")},
                     {"rotate_duration":LaunchConfiguration("rotate_duration")},
                     {"reverse_duration":LaunchConfiguration("reverse_duration")},
+                    {"decel_distance":LaunchConfiguration("decel_distance")},
                     ],
                 output="screen"
             )
