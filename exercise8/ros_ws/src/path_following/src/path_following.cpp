@@ -228,7 +228,7 @@ double PathFollowing::nearest_projection_angle(nav_msgs::msg::Path &path, Vec2f 
 
 void PathFollowing::check_save_zone()
 {
-  // < deadband is ignored (propably reflection on the ground)
+  // points < deadband is ignored (propably reflection on the ground)
   const double far_limit = length_ + near_deadband_;
   int count = 0;
 
@@ -267,6 +267,7 @@ bool PathFollowing::shouldStartAvoidance() const {
   return consecutive_hits_ >= 2;
 }
 
+// Start the reversing 
 void PathFollowing::startReversing() {
   state_ = State::REVERSING;
   state_start_time_ = now();
@@ -312,7 +313,7 @@ void PathFollowing::handleRotating() {
   move_cmd_pub->publish(twist);
 }
 
-
+// Starts deceleration if distance to goal is smaller then decel_distance_
 void PathFollowing::applyDeceleration(double &v) {
   const auto &end = processed_path.poses.back().pose.position;
   double dx = end.x - curr_pos.x;
@@ -320,11 +321,13 @@ void PathFollowing::applyDeceleration(double &v) {
   double dist = std::hypot(dx, dy);
 
   if (dist < decel_distance_) {
+      // s = 1/2 * a * t², v = a * t => v = sqrt(2 * a * s)
       double v_lim = std::sqrt(2.0 * a_max_ * dist);
       v = std::min(v, v_lim);
   }
   if (dist < 0.05) {
-      v = 0.0;
+       // completly stop when distance smaller then 5 cm 
+       v = 0.0;
   }
 }
 

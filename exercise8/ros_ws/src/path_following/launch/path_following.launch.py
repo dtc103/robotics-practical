@@ -12,6 +12,7 @@ def generate_launch_description():
             DeclareLaunchArgument("d_gain", default_value="0.0", description="Derivative gain for the Stanley heading controller."),
             DeclareLaunchArgument("k_gain", default_value="3.0", description="Cross-track error correction gain (Stanley method)."),
             
+
             DeclareLaunchArgument("length", default_value="0.15", description="Length of danger zone."),
             DeclareLaunchArgument("width", default_value="0.3", description="Width of danger zone."),
             DeclareLaunchArgument("near_deadband", default_value="0.2", description="Distance from robot that is ignored for obstacle avoidance."),

@@ -75,7 +75,7 @@ nav_msgs::msg::Path processPath(const nav_msgs::msg::Path &path) {
     // smoothen the path
     alglib::spline1dinterpolant s1, s2;
     alglib::spline1dfitreport rep1, rep2;
-    double rho = 3.0;
+    double rho = 1.7;
     alglib::ae_int_t info1, info2;
     alglib::real_1d_array x_sm, y_sm, l_alg_sm;
 
